@@ -19,22 +19,84 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::F
     Asize = params[:ee]
     ℓsize = div(L, 2)
     # Interaction paramers V, V' 
-    V_array = params[:V_start]:params[:V_step]:params[:V_end]
+    # Split V in regions <0 and >0 and start from values closest to 0
+    if params[:logspace]
+        V_array = log_V_range(params[:V_start],params[:V_end],params[:V_num]) 
+    else
+        V_array = lin_V_range(params[:V_start],params[:V_end],params[:V_num]) 
+    end 
     Vp = params[:Vp]
 
-  ### Main calculation ###
-    for V in ProgressBar(V_array)
-        particle_ee, spatial_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,Asize,ℓsize,params[:spatial])
+  ### Main calculation ### 
+    # setup lattice
+    sites = siteinds("Fermion",L; conserve_qns=true)
+    # run over negative and positive V range separately
+    # first V determines orthogonal states for the whole range
+    # wave functions of consecutive steps are reused
+    for (i,Vs) in enumerate(V_array)
+        if length(Vs)> 0
+            println("Calculation ",i,"/",length(V_array)," form ",Vs[1] ," to ", Vs[end] ,"...")
+            psi, psi_bot_vec = create_initial_state(sites,L,N,Vs[1])
+            for V in ProgressBar(Vs)
+                psi, particle_ee, spatial_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,Asize,ℓsize,params[:spatial])
 
-        write(output_fh,"particleEE",V,particle_ee)
-        if params[:spatial]
-            write(output_fh,"spatialEE",V,spatial_ee)
+                write(output_fh,"particleEE",V,particle_ee)
+                if params[:spatial]
+                    write(output_fh,"spatialEE",V,spatial_ee)
+                end
+            end
         end
     end
 
     return nothing
 end
 
+"""
+Use initial state psi and psi_bot_vec to perform the dmrg step. Then compute entanglement calculation.
+
+Returns:
+    psi: dmrg ground state solution
+    particle_EE: particle entanglement entropies vector (1 van neumann, 2-10 Renyi, 11 negativity)
+    spatial_EE: all zeros if spatial=false, else spatial entanglement entropies vector
+"""
+function compute_dmrg_entanglement_equilibrium(
+    L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond,
+    sites::Vector{Index{Vector{Pair{QN, Int64}}}}, psi::MPS, psi_bot_vec::Vector{MPS},
+    Asize::Int64,ℓsize::Int64,spatial::Bool)
+
+    H = create_hamiltonian(sites,L,N,t,V,Vp,boundary)
+
+    # dmrg parameters
+    sweeps = Sweeps(10)
+    maxdim!(sweeps,10,20,100,100,200)
+    cutoff!(sweeps,1e-10) 
+    noise!(sweeps,1E-7,1E-8,0.0) 
+
+    # dmrg steps TODO: outputlevel set from commandline
+    psi = 1/norm(psi)*psi 
+    energy, psi = dmrg(H,psi_bot_vec,psi,sweeps;outputlevel=0)
+    psi = 1/norm(psi)*psi 
+
+    # compute particle entanglement entropy
+    particle_EE = compute_particle_EE(copy(psi),Asize,N)
+
+
+    if spatial
+        # compute spatial entanglement entropy
+        spatial_EE = compute_spatial_EE(copy(psi),ℓsize)
+
+        return psi, particle_EE, spatial_EE
+    end
+    return    psi, particle_EE, zeros(Float64,size(particle_EE))
+end
+
+"""
+Constructs new initial psi0 and psi_bot and uses these to perform dmrg step. Then compute entanglement calculation.
+
+Returns: 
+    particle_EE: particle entanglement entropies vector (1 van neumann, 2-10 Renyi, 11 negativity)
+    spatial_EE: all zeros if spatial=false, else spatial entanglement entropies vector
+"""
 function compute_dmrg_entanglement_equilibrium(
             L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,
             boundary::BdryCond,Asize::Int64,ℓsize::Int64,
@@ -42,7 +104,7 @@ function compute_dmrg_entanglement_equilibrium(
 
     sites = siteinds("Fermion",L; conserve_qns=true)
     H = create_hamiltonian(sites,L,N,t,V,Vp,boundary)
-    psi = create_initial_state(sites,L,N,V)
+    psi, psi_bot_vec = create_initial_state(sites,L,N,V)
 
     # dmrg parameters
     sweeps = Sweeps(5)
@@ -51,10 +113,9 @@ function compute_dmrg_entanglement_equilibrium(
     noise!(sweeps,1e-5,1e-8)
 
     # dmrg steps TODO: outputlevel set from commandline
-    #psi = 1/norm(psi)*psi 
-    energy, psi = dmrg(H,psi,sweeps;outputlevel=0)
-
-    # TODO: save state and energy to file
+    psi = 1/norm(psi)*psi 
+    energy, psi = dmrg(H,psi_bot_vec,psi,sweeps;outputlevel=0)
+    psi = 1/norm(psi)*psi 
 
     # compute particle entanglement entropy
     particle_EE = compute_particle_EE(psi,Asize,N)
@@ -97,50 +158,133 @@ function create_hamiltonian(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int
     return MPO(ampo,sites)
 end
 
-function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64,V::Float64)
-    psi0 = MPS()
-    if -0.5<V<1
-        # in LL limit just add 2L+1 random occupations
-        # start with 0101010101 and shuffle it
-        state = Vector{String}([Bool(i%2) ? "Emp" : "Occ" for i in 1:L ])
-        for iState = 0:2*L
-            shuffle!(state)
-            if iState == 0
-                psi0 = MPS(sites,state)
-            else
-                psi0 = sum(psi0,MPS(sites,state))
-            end
-        end
 
-    elseif V > 0.0
+"""
+create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64,V::Float64)
+sets up the initial state depending on the t-V model phase. 
+
+different cases:
+    - V>0:
+        |psi0> = random state - proj(random state->|01010101...>-|101010101...>) + |01010101...>+|101010101...>
+      if also V>1:
+        decrease influence of random state by 1/V^2 compared to the infinite limit
+    - V<0:
+        let |Psi_bot> = FT[|1110000..>, |0111000...>, |00111000...>, ...] where FT is the real Fourier transform
+        with sin and cos coeficients except for the q=0 coefficent
+        |psi0> =  random state - proj(random state->|Psi_bot>) +  |1110000..> +  |0111000...> + |00111000...> + ...
+      if also V<-1:
+        decrease influence by 1/V^2 compared to the infinite limit
+"""
+function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64,V::Float64)
+    psi0 = MPS() 
+
+    # random state : start with 0101010101 and shuffle it
+    state = Vector{String}([Bool(i%2) ? "Emp" : "Occ" for i in 1:L ])
+    for iState = 0:2*L
+        shuffle!(state)
+        if iState == 0
+            psi0 = MPS(sites,state)
+        else
+            psi0 = psi0 + MPS(sites,state)
+        end
+    end 
+    # find states in orthogonal subspace and V->inf limit state
+    psi_inf, psi_bot_vec = construct_auxiliary_states(sites,L,N,V) 
+    # subtract projection onto orthogonal state 
+    for psi_bot in psi_bot_vec 
+        psi0 = psi0 - dot(psi_bot,psi0)*psi0 
+    end
+    # add infinite state
+    if abs(V) > 1
+        # towards the phase transition points, reduce influence of random state
+        psi0 = 1/V^2*psi0 + psi_inf
+    else
+        psi0 = psi0 + psi_inf
+    end
+ 
+    return psi0, psi_bot_vec
+end 
+
+
+function construct_auxiliary_states(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64,V::Float64)
+    psi_inf = MPS()  
+
+    if V > 0.0
         # if V positive, repulsion -> 101010... and 010101 ... as initial state
+        ####
+        # get all relevant state vectors
+        state_vecs = Vector{Vector{String}}(undef,2)
         for iState = 0:1
-            state = Vector{String}(undef,L)
+            state_vecs[iState+1] = Vector{String}(undef,L)
             for iSite in 1:L
-                state[iSite] = xor(Bool(iState), Bool(iSite%2)) ? "Occ" : "Emp"
-            end
-            if iState == 0
-                psi0 = MPS(sites,state)
-            else
-                psi0 = sum(psi0,MPS(sites,state))
+                state_vecs[iState+1][iSite] = xor(Bool(iState), Bool(iSite%2)) ? "Occ" : "Emp"
             end
         end
+        # construct orthogonal and V->inf state
+        psi_bot_vec = [MPS(sites,state_vecs[2]) - MPS(sites,state_vecs[1])]
+        psi_inf = MPS(sites,state_vecs[2]) + MPS(sites,state_vecs[1])
     else
         # for negatve V, attractive, add states 111000000, 01110000, 001110000...
+        ####
+        psi_bot_vec = Vector{MPS}(undef,L-1)
+        # get all relevant state vectors
+        state_vecs = Vector{Vector{String}}(undef,L)
         for iState = 0:L-1
-            state = Vector{String}(["Emp" for i in 1:L])
+            state_vecs[iState+1] = Vector{String}(["Emp" for i in 1:L])
             for iSite in iState:(iState+N-1)
-                state[iSite%L + 1] = "Occ"
-            end 
-            if iState == 0
-                psi0 = MPS(sites,state)
-            else
-                psi0 = sum(psi0,MPS(sites,state))
+                state_vecs[iState+1][iSite%L + 1] = "Occ"
+            end  
+        end 
+        # contruct MPS for all state_vecs
+        state_mps = Vector{MPS}(undef,L)
+        for (i, state_v) in enumerate(state_vecs)
+            @inbounds state_mps[i]  = MPS(sites,state_v)
+        end
+        state_vecs = nothing
+        # construct orthogonal and V->inf state
+        # PROBLEM?: for save addition we start from a term that has always non-zero coefficent
+        # in the sin terms we therefore use (n+1) and start with the second term
+        for q = 1:N
+            psi_bot_vec[q]  = 1.0*state_mps[1] 
+            if q < N
+                psi_bot_vec[q+N] = sin(2*pi*q/L)*state_mps[2]
             end
+            for n = 1:L-1 
+                psi_bot_vec[q] += cos(2*pi*q*n/L)*state_mps[n+1] 
+                if n < L-1 && q<N
+                    psi_bot_vec[q+N] += sin(2*pi*q*(n+1)/L)*state_mps[n+2]
+                end
+            end
+        end 
+        psi_bot_vec[L-1]  = 1.0*state_mps[1]
+        for n = 1:L-1 
+            psi_bot_vec[L-1] += cos(2*pi*N*n/L)*state_mps[n+1] 
+        end 
+
+        psi_inf = state_mps[1]
+        for i = 2:L 
+            psi_inf = psi_inf + state_mps[i]
+        end
+
+    end
+
+    # normalize states
+    for i = 1:length(psi_bot_vec)
+        @inbounds psi_bot_vec[i] = 1/norm(psi_bot_vec[i])*psi_bot_vec[i]
+    end
+    psi_inf = 1/norm(psi_inf)*psi_inf
+
+    # DEBUG: check that psi_inf orthogonal to every  state in psi_bot_vec
+    for (i, psi_bot) in enumerate(psi_bot_vec)
+        scprod = dot(psi_inf, psi_bot)
+        if scprod>1e-12
+            println("___________________________________________________________________")
+            println("WARNING: a vector ",i,"/",length(psi_bot_vec)," in psi_bot_vec is not orthogonal to psi_inf. <A|B> =",scprod) 
+            println("___________________________________________________________________")
         end
     end
 
-    return psi0 
+    return psi_inf, psi_bot_vec
 end
 
 """Compute Renyi spatial entanglement entropies (see ITensor documentation
@@ -180,11 +324,8 @@ end
 function compute_particle_EE(psi::MPS,Asize::Int64,N::Int64)
     lnN = log(N)
 
-    # compute one body density matrix
-    psi = 1/norm(psi)*psi
+    # compute one body density matrix 
     obdm = correlation_matrix(psi,"Cdag","C")
-
-    # TODO: save obdm
 
     # get obdm spectrum
     λs = abs.(eigvals!(obdm))/N
@@ -199,7 +340,14 @@ function compute_particle_EE(psi::MPS,Asize::Int64,N::Int64)
     
 end
 
-function compute_Renyi(α::Int64,λs::Vector{Float64},offset::Float64 = 0.0)    
+function compute_Renyi(α::Int64,λs::Vector{Float64},offset::Float64 = 0.0) 
+    sumeval = sum(λs)
+    if abs(sumeval-1.0)>1e-8
+        println("___________________________________________________________________")
+        println("WARNING: Density matrix not normalized. Sum of eigenvalues is ",sumeval,".")
+        println("___________________________________________________________________")
+    end 
+    
     if α == 1
         # van Neumann entropy
         See = 0.0

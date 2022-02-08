@@ -8,6 +8,7 @@ Usage:
 module DMRGEntanglementCalculation
     using Base
     using OutputFileHandler
+    using Utils
 
     export  
         tV_dmrg_ee_calclation_equilibrium,

@@ -9,6 +9,7 @@ using Dates
 using Pkg
 using DMRGEntanglementCalculation
 using OutputFileHandler
+using Random
 
 Pkg.add("ITensors")
 Pkg.add("ArgParse")
@@ -58,21 +59,24 @@ function parse_commandline()
     end
     add_arg_group(s, "tV parameters")
     @add_arg_table s begin 
-        "--V_start"
+        "--V-start"
             metavar = "V_start"
             help = "start V"
             arg_type = Float64
             default = -2.0
-        "--V_end"
+        "--V-end"
             metavar = "V_end"
             help = "end V"
             arg_type = Float64
             default = 2.0
-        "--V_step"
-            metavar = "V_step"
-            help = "step in V"
-            arg_type = Float64
-            default = 0.1 
+        "--V-num"
+            metavar = "V_num"
+            help = "number of V values"
+            arg_type = Int64
+            default = 100 
+        "--logspace" 
+            help = "logarithmic spacing of V values around 0"
+            action = :store_true 
         "--Vp"
             metavar = "Vp"
             help = "final Vp"
@@ -83,6 +87,14 @@ function parse_commandline()
             help = "t value"
             arg_type = Float64
             default = 1.0
+    end
+    add_arg_group(s, "dmrg parameter")
+    @add_arg_table s begin
+        "--seed"
+            metavar = "seed"
+            help = "seed for random number generator"
+            arg_type = Int
+            default = 12345
     end
     add_arg_group(s, "entanglement entropy")
     @add_arg_table s begin
@@ -120,7 +132,7 @@ function main()
     else
         out_folder = c[:out]
     end   
-    calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vstp%+5.3f" c[:L] c[:N] c[:t] c[:Vp] c[:V_start] c[:V_end] c[:V_step]
+    calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:V_start] c[:V_end] c[:V_num]
     # Create output file handlers
     output_fh = FileOutputHandler(~c[:no_flush])
     
@@ -135,7 +147,7 @@ function main()
         # add to file_handler
         add!(output_fh,file_pe_01,out_str_pe_01,handler_name)
         # write initial header
-        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vstep=$(c[:V_step]), $(c[:boundary])\n")
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
         write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "V" "S₁(n=$(Asize))" "S₂(n=$(Asize))" "S₃(n=$(Asize))" "S₄(n=$(Asize))" "S₅(n=$(Asize))" "S₆(n=$(Asize))" "S₇(n=$(Asize))" "S₈(n=$(Asize))" "S₉(n=$(Asize))" "S₁₀(n=$(Asize))" "S₀₋₅(n=$(Asize))")
  
@@ -151,12 +163,13 @@ function main()
         # add to file_handler
         add!(output_fh,file_se_02,out_str_se_02,handler_name)
         # write initial header
-        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vstep=$(c[:V_step]), $(c[:boundary])\n")
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
         write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "V" "S₁(n=$(ℓsize))" "S₂(n=$(ℓsize))" "S₃(n=$(ℓsize))" "S₄(n=$(ℓsize))" "S₅(n=$(ℓsize))" "S₆(n=$(ℓsize))" "S₇(n=$(ℓsize))" "S₈(n=$(ℓsize))" "S₉(n=$(ℓsize))" "S₁₀(n=$(ℓsize))" "S₀₋₅(n=$(ℓsize))")      
     end
 
  # _____________3_Calculation______________________ 
+    Random.seed!(c[:seed])
     tV_dmrg_ee_calclation_equilibrium(c,output_fh)
 
  # ________4_Output_Finalization___________________ 
