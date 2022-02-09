@@ -256,11 +256,17 @@ function construct_auxiliary_states(sites::Vector{Index{Vector{Pair{QN, Int64}}}
                 end
             end
         end 
+        
+        
+#---------- I think this is overwriting one of the sin() MPS which is created at q+N when q=N-1.-------
+#---------- I think the MPS being created here is already exists at index q=N.------------------------------
         psi_bot_vec[L-1]  = 1.0*state_mps[1]
         for n = 1:L-1 
             psi_bot_vec[L-1] += cos(2*pi*N*n/L)*state_mps[n+1] 
         end 
-
+#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        
+        
         psi_inf = state_mps[1]
         for i = 2:L 
             psi_inf = psi_inf + state_mps[i]
