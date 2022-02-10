@@ -107,10 +107,10 @@ function compute_dmrg_entanglement_equilibrium(
     psi, psi_bot_vec = create_initial_state(sites,L,N,V)
 
     # dmrg parameters
-    sweeps = Sweeps(5)
+    sweeps = Sweeps(10)
     maxdim!(sweeps,10,20,100,100,200)
     cutoff!(sweeps,1e-10)
-    noise!(sweeps,1e-5,1e-8)
+    noise!(sweeps,1E-7,1E-8,0.0) 
 
     # dmrg steps TODO: outputlevel set from commandline
     psi = 1/norm(psi)*psi 
@@ -180,7 +180,8 @@ function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::I
 
     # random state : start with 0101010101 and shuffle it
     state = Vector{String}([Bool(i%2) ? "Emp" : "Occ" for i in 1:L ])
-    for iState = 0:2*L
+    numRands = 5*L
+    for iState = 0:numRands
         shuffle!(state)
         if iState == 0
             psi0 = MPS(sites,state)
@@ -188,11 +189,12 @@ function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::I
             psi0 = psi0 + MPS(sites,state)
         end
     end 
+    psi0 = 1/norm(psi0)*psi0
     # find states in orthogonal subspace and V->inf limit state
     psi_inf, psi_bot_vec = construct_auxiliary_states(sites,L,N,V) 
     # subtract projection onto orthogonal state 
     for psi_bot in psi_bot_vec 
-        psi0 = psi0 - dot(psi_bot,psi0)*psi0 
+        psi0 = psi0 - dot(psi_bot,psi0)*psi_bot 
     end
     # add infinite state
     if abs(V) > 1
@@ -257,16 +259,6 @@ function construct_auxiliary_states(sites::Vector{Index{Vector{Pair{QN, Int64}}}
             end
         end 
         
-        
-#---------- I think this is overwriting one of the sin() MPS which is created at q+N when q=N-1.-------
-#---------- I think the MPS being created here is already exists at index q=N.------------------------------
-        psi_bot_vec[L-1]  = 1.0*state_mps[1]
-        for n = 1:L-1 
-            psi_bot_vec[L-1] += cos(2*pi*N*n/L)*state_mps[n+1] 
-        end 
-#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        
-        
         psi_inf = state_mps[1]
         for i = 2:L 
             psi_inf = psi_inf + state_mps[i]
@@ -289,6 +281,17 @@ function construct_auxiliary_states(sites::Vector{Index{Vector{Pair{QN, Int64}}}
             println("___________________________________________________________________")
         end
     end
+    # DEBUG: compute overlap matrix of the psi_bot_vec
+    # println("DEBUG: overlap matrix of bot states: only print terms >1e-14 and i!=j")
+    # for i = 1:length(psi_bot_vec) 
+    #     for j = 1:length(psi_bot_vec)
+    #         overlap = dot(psi_bot_vec[i],psi_bot_vec[j])
+    #         if overlap > 1e-14 && i!=j
+    #             println("i=$(i), j=$(j), <i|j>=$(dot(psi_bot_vec[i],psi_bot_vec[j]))")
+    #         end
+    #     end
+    # end
+    # exit(0)
 
     return psi_inf, psi_bot_vec
 end

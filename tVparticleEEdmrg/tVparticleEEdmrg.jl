@@ -133,6 +133,9 @@ function main()
         out_folder = c[:out]
     end   
     calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:V_start] c[:V_end] c[:V_num]
+    if c[:boundary] == OBC
+        calculation_label = calculation_label*"_obc"
+    end
     # Create output file handlers
     output_fh = FileOutputHandler(~c[:no_flush])
     
