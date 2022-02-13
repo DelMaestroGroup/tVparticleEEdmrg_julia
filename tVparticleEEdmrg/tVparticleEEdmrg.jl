@@ -11,10 +11,10 @@ using DMRGEntanglementCalculation
 using OutputFileHandler
 using Random
 
-Pkg.add("ITensors")
-Pkg.add("ArgParse")
-Pkg.add("ProgressBars")
-Pkg.add("BenchmarkTools")
+#Pkg.add("ITensors")
+#Pkg.add("ArgParse")
+#Pkg.add("ProgressBars")
+#Pkg.add("BenchmarkTools")
 
 
 # ------------------------------------------------------------------------------
@@ -169,6 +169,23 @@ function main()
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
         write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "V" "S₁(n=$(ℓsize))" "S₂(n=$(ℓsize))" "S₃(n=$(ℓsize))" "S₄(n=$(ℓsize))" "S₅(n=$(ℓsize))" "S₆(n=$(ℓsize))" "S₇(n=$(ℓsize))" "S₈(n=$(ℓsize))" "S₉(n=$(ℓsize))" "S₁₀(n=$(ℓsize))" "S₀₋₅(n=$(ℓsize))")      
+    end
+
+    # 2.3. output of accessible entanglement (ae_03)
+    if c[:spatial]   
+        ℓsize = Int(c[:L]/2)
+        handler_name = "accessibleEE"
+        # function to convert data to string data = (V, entropies)
+        out_str_ae_03 = (data)->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
+        # open file
+        path_ae_03 = joinpath(out_folder,@sprintf "accessible_entanglement_l%02d_%s.dat" ℓsize calculation_label)
+        file_ae_03 = open(path_ae_03 ,"w")
+        # add to file_handler
+        add!(output_fh,file_ae_03,out_str_ae_03,handler_name)
+        # write initial header
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
+        write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
+        write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "V" "Sacc₁(ℓ=$(ℓsize))" "Sacc₂(ℓ=$(ℓsize))" "Sacc₃(ℓ=$(ℓsize))" "Sacc₄(ℓ=$(ℓsize))" "Sacc₅(ℓ=$(ℓsize))" "Sacc₆(ℓ=$(ℓsize))" "Sacc₇(ℓ=$(ℓsize))" "Sacc₈(ℓ=$(ℓsize))" "Sacc₉(ℓ=$(ℓsize))" "Sacc₁₀(ℓ=$(ℓsize))" "Sacc₀₋₅(ℓ=$(ℓsize))")      
     end
 
  # _____________3_Calculation______________________ 

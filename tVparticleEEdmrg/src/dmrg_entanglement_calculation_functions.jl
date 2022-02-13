@@ -38,11 +38,12 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::F
             println("Calculation ",i,"/",length(V_array)," form ",Vs[1] ," to ", Vs[end] ,"...")
             psi, psi_bot_vec = create_initial_state(sites,L,N,Vs[1])
             for V in ProgressBar(Vs)
-                psi, particle_ee, spatial_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,Asize,ℓsize,params[:spatial])
+                psi, particle_ee, spatial_ee, accessible_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,Asize,ℓsize,params[:spatial])
 
                 write(output_fh,"particleEE",V,particle_ee)
                 if params[:spatial]
                     write(output_fh,"spatialEE",V,spatial_ee)
+                    write(output_fh,"accessibleEE",V,accessible_ee)
                 end
             end
         end
@@ -83,11 +84,11 @@ function compute_dmrg_entanglement_equilibrium(
 
     if spatial
         # compute spatial entanglement entropy
-        spatial_EE = compute_spatial_EE(copy(psi),ℓsize)
+        spatial_EE, accessible_EE = compute_spatial_EE(copy(psi),ℓsize)
 
-        return psi, particle_EE, spatial_EE
+        return psi, particle_EE, spatial_EE, accessible_EE
     end
-    return    psi, particle_EE, zeros(Float64,size(particle_EE))
+    return    psi, particle_EE, zeros(Float64,size(particle_EE)), zeros(Float64,size(accessible_EE))
 end
 
 """
@@ -123,9 +124,9 @@ function compute_dmrg_entanglement_equilibrium(
 
     if spatial
         # compute spatial entanglement entropy
-        spatial_EE = compute_spatial_EE(psi,ℓsize)
+        spatial_EE, accessible_EE = compute_spatial_EE(psi,ℓsize)
 
-        return particle_EE, spatial_EE
+        return particle_EE, spatial_EE, accessible_EE
     end
     return    particle_EE, zeros(Float64,size(particle_EE))
 end
@@ -317,7 +318,7 @@ function compute_spatial_EE(psi::MPS,lsize::Int64)
         λs[i] = S[i,i]^2
     end
 
-    S = nothing
+    #S = nothing
  
     λs = λs[λs.>1e-12]
      
@@ -325,9 +326,39 @@ function compute_spatial_EE(psi::MPS,lsize::Int64)
     for α = 1:11
         spatial_EE[α] = compute_Renyi(α,λs)
     end
+#_________________________________________
 
-    return spatial_EE
+    αs=[1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,0.5]
+    accessible_EE = Vector{Float64}(undef,11)
+    nb =nblocks(S)[1]
+    accessible_pnα =zeros(Float64,11,nb)
+    counter=0;
+    for i = 1:nb
+        for j = 1:dims(S[Block(i, i)])[1]
+            counter+=1
+            for iα = 1:length(αs)
+                accessible_pnα[iα,i]+=S[counter, counter]^(2*αs[iα])
+            end
+        end
+    end
+    for iα = 1:length(αs)
+        accessible_pnα[iα,:]/=sum(accessible_pnα[iα,:])
+    end
+    for α = 1:11
+        accessible_EE[α] =spatial_EE[α]- compute_InvRenyi( α,accessible_pnα[α,:])
+    end
+
+
+
+    return spatial_EE, accessible_EE
     
+
+
+
+
+
+
+
 end
 
 function compute_particle_EE(psi::MPS,Asize::Int64,N::Int64)
@@ -375,3 +406,31 @@ function compute_Renyi(α::Int64,λs::Vector{Float64},offset::Float64 = 0.0)
     return 1/(1-α) * log(sum( λs.^α )) - offset
 
 end
+
+function compute_InvRenyi(α::Int64,λs::Vector{Float64},offset::Float64 = 0.0) 
+    sumeval = sum(λs)
+    if abs(sumeval-1.0)>1e-8
+        println("___________________________________________________________________")
+        println("WARNING: Density matrix not normalized. Sum of eigenvalues is ",sumeval,".")
+        println("___________________________________________________________________")
+    end 
+    
+    if α == 1
+        # van Neumann entropy
+        See = 0.0
+        for λ in λs
+            if λ > 0.0
+                See -= λ * log(λ)
+            end
+        end
+        return See - offset
+
+    elseif α == 11
+        #1/α = 2
+        return -log(sum(  λs.^2)) - offset
+    end
+
+    return 1/(1-(1.0/α)) * log(sum( λs.^(1.0/α) )) - offset
+
+end
+
