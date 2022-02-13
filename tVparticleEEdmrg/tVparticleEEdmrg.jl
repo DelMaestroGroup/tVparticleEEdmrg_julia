@@ -39,6 +39,9 @@ function parse_commandline()
         "--no-flush"
             help = "do not flush write buffer to output files in after computation for each V" 
             action = :store_true 
+        "--debug"
+            help = "print <psi|psi_bot>, <psi|psi_inf>, and gs energy for each step to a file" 
+            action = :store_true 
     end
     add_arg_group(s, "boundary conditions")
     @add_arg_table s begin
@@ -169,6 +172,21 @@ function main()
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
         write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "V" "S₁(n=$(ℓsize))" "S₂(n=$(ℓsize))" "S₃(n=$(ℓsize))" "S₄(n=$(ℓsize))" "S₅(n=$(ℓsize))" "S₆(n=$(ℓsize))" "S₇(n=$(ℓsize))" "S₈(n=$(ℓsize))" "S₉(n=$(ℓsize))" "S₁₀(n=$(ℓsize))" "S₀₋₅(n=$(ℓsize))")      
+    end
+    # 2.3 debug printing
+    if c[:debug]
+        handler_name = "debug"
+        # function to convert data to string data = (V, energy, <psi|psi_inf>, <psi|psi_bot1> ...  <psi|psi_botn>)
+        out_str_debug_03 = (data)->@sprintf "%24.12E%24.12E%24.12E%s\n" data[1] data[2] data[3] join([@sprintf "%24.12E" sp for sp in data[4]], "")
+        # open file
+        path_debug_03 = joinpath(out_folder,@sprintf "debug_%s.dat" calculation_label)
+        file_debug_03 = open(path_debug_03,"w")
+        # add to file_handler
+        add!(output_fh,file_debug_03,out_str_debug_03,handler_name)
+        # write initial header
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
+        write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
+        write_str(output_fh,handler_name,@sprintf "#%24s%24s%24s%24s\n" "V" "energy" "<psi|psi_inf>" "<psi|psi_bot1> ..." )      
     end
 
  # _____________3_Calculation______________________ 

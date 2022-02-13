@@ -36,9 +36,9 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::F
     for (i,Vs) in enumerate(V_array)
         if length(Vs)> 0
             println("Calculation ",i,"/",length(V_array)," form ",Vs[1] ," to ", Vs[end] ,"...")
-            psi, psi_bot_vec = create_initial_state(sites,L,N,Vs[1])
+            psi, psi_bot_vec, psi_inf = create_initial_state(sites,L,N,Vs[1])
             for V in ProgressBar(Vs)
-                psi, particle_ee, spatial_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,Asize,ℓsize,params[:spatial])
+                psi, particle_ee, spatial_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial];debug=params[:debug],output_fh=output_fh)
 
                 write(output_fh,"particleEE",V,particle_ee)
                 if params[:spatial]
@@ -61,8 +61,8 @@ Returns:
 """
 function compute_dmrg_entanglement_equilibrium(
     L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond,
-    sites::Vector{Index{Vector{Pair{QN, Int64}}}}, psi::MPS, psi_bot_vec::Vector{MPS},
-    Asize::Int64,ℓsize::Int64,spatial::Bool)
+    sites::Vector{Index{Vector{Pair{QN, Int64}}}}, psi::MPS, psi_bot_vec::Vector{MPS}, psi_inf::MPS,
+    Asize::Int64,ℓsize::Int64,spatial::Bool;debug::Bool=false,output_fh::Union{IO,AbstractString,FileOutputHandler}=stdout)
 
     H = create_hamiltonian(sites,L,N,t,V,Vp,boundary)
 
@@ -76,6 +76,17 @@ function compute_dmrg_entanglement_equilibrium(
     psi = 1/norm(psi)*psi 
     energy, psi = dmrg(H,psi_bot_vec,psi,sweeps;outputlevel=0)
     psi = 1/norm(psi)*psi 
+
+    # debug printing
+    if debug  
+        sp_psi_psiinf = dot(psi,psi_inf) 
+        sp_psi_psibot = [dot(psi,psi_bot) for psi_bot in psi_bot_vec]
+        if isa(output_fh,FileOutputHandler)
+            write(output_fh,"debug",V,energy,sp_psi_psiinf,sp_psi_psibot)
+        else
+            write(output_fh,"debug: V = $(V), energy = $(energy), <psi|psi_inf> = $(sp_psi_psiinf), <psi|psi_bots> = $(sp_psi_psibot) \n")
+        end
+    end
 
     # compute particle entanglement entropy
     particle_EE = compute_particle_EE(copy(psi),Asize,N)
@@ -204,7 +215,7 @@ function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::I
         psi0 = psi0 + psi_inf
     end
  
-    return psi0, psi_bot_vec
+    return psi0, psi_bot_vec, psi_inf
 end 
 
 
