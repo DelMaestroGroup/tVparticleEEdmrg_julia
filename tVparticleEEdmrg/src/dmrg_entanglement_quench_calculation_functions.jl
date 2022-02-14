@@ -27,6 +27,7 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
     end 
     # flatten and sort V
     V_array = sort(vcat(V_array...))
+    nV = len(V_array)
     # unpack other parameters
     V0 = params[:V0]
     Vp0 = params[:Vp0]
@@ -45,6 +46,7 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
     for (iV, V) in enumerate(V_array)
         # print # V to all files
         write_str(output_fh,"# V = $(V)\n")
+        println("\nEvolution $(iV)/$(nV) for V=$(V) ... ")
         # perform time evolution, entanglement calculation, and write to files (need to copy state psi as will be changed in the function)
         compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug])      
     end
