@@ -12,6 +12,7 @@ module DMRGEntanglementCalculation
 
     export  
         tV_dmrg_ee_calclation_equilibrium,
+        tV_dmrg_ee_calclation_quench,
         BdryCond, PBC, OBC
      
     """
@@ -22,4 +23,5 @@ module DMRGEntanglementCalculation
     @doc "Open boundary conditions." OBC
 
     include("dmrg_entanglement_calculation_functions.jl")
+    include("dmrg_entanglement_quench_calculation_functions.jl")
 end

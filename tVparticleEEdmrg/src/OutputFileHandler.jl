@@ -24,7 +24,7 @@ module OutputFileHandler
         FileOutputHandler,
         add!,
         write,
-        write_str,
+        write_str, 
         close
      
 

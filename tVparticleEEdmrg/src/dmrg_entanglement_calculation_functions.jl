@@ -21,9 +21,9 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::F
     # Interaction paramers V, V' 
     # Split V in regions <0 and >0 and start from values closest to 0
     if params[:logspace]
-        V_array = log_V_range(params[:V_start],params[:V_end],params[:V_num]) 
+        V_array = log_range(params[:V_start],params[:V_end],params[:V_num]) 
     else
-        V_array = lin_V_range(params[:V_start],params[:V_end],params[:V_num]) 
+        V_array = lin_range(params[:V_start],params[:V_end],params[:V_num]) 
     end 
     Vp = params[:Vp]
 
@@ -68,10 +68,10 @@ function compute_dmrg_entanglement_equilibrium(
     H = create_hamiltonian(sites,L,N,t,V,Vp,boundary)
 
     # dmrg parameters
-    sweeps = Sweeps(10)
-    maxdim!(sweeps,10,20,100,100,200)
-    cutoff!(sweeps,1e-10) 
-    noise!(sweeps,1E-7,1E-8,0.0) 
+    sweeps = Sweeps(10) 
+    setmaxdim!(sweeps, 100, 200, 400, 800, 1600)
+    setcutoff!(sweeps, 1e-12)
+    setnoise!(sweeps, 1e-6, 1e-7, 1e-8, 0.0)
 
     # dmrg steps TODO: outputlevel set from commandline
     psi = 1/norm(psi)*psi 
@@ -121,10 +121,10 @@ function compute_dmrg_entanglement_equilibrium(
     psi, psi_bot_vec = create_initial_state(sites,L,N,V)
 
     # dmrg parameters
-    sweeps = Sweeps(10)
-    maxdim!(sweeps,10,20,100,100,200)
-    cutoff!(sweeps,1e-10)
-    noise!(sweeps,1E-7,1E-8,0.0) 
+    sweeps = Sweeps(10) 
+    setmaxdim!(sweeps, 100, 200, 400, 800, 1600)
+    setcutoff!(sweeps, 1e-12)
+    setnoise!(sweeps, 1e-6, 1e-7, 1e-8, 0.0)
 
     # dmrg steps TODO: outputlevel set from commandline
     psi = 1/norm(psi)*psi 
@@ -204,17 +204,7 @@ function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::I
     psi0 = MPS() 
 
     # random state : start with 0101010101 and shuffle it
-    state = Vector{String}([Bool(i%2) ? "Emp" : "Occ" for i in 1:L ])
-    numRands = 5*L
-    for iState = 0:numRands
-        shuffle!(state)
-        if iState == 0
-            psi0 = MPS(sites,state)
-        else
-            psi0 = psi0 + MPS(sites,state)
-        end
-    end 
-    psi0 = 1/norm(psi0)*psi0
+    psi0 = get_random_state(sites,L,N;numRands=5*L)
     # find states in orthogonal subspace and V->inf limit state
     psi_inf, psi_bot_vec = construct_auxiliary_states(sites,L,N,V) 
     # subtract projection onto orthogonal state 
@@ -232,11 +222,30 @@ function create_initial_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::I
     return psi0, psi_bot_vec, psi_inf
 end 
 
+function get_random_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64;numRands::Int64=20)
+    state = Vector{String}([Bool(i%2) ? "Emp" : "Occ" for i in 1:L ]) 
+    for iState = 0:numRands
+        shuffle!(state)
+        if iState == 0
+            psi0 = MPS(sites,state)
+        else
+            psi0 = psi0 + MPS(sites,state)
+        end
+    end 
+    psi0 = 1/norm(psi0)*psi0
+    return psi0
+end
+
+function get_random_product_state(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64;numRands::Int64=20)
+    state = Vector{String}([Bool(i%2) ? "Emp" : "Occ" for i in 1:L ]) 
+    psi0 = randomMPS(sites, state;linkdims=numRands)
+    return 1/norm(psi0)*psi0
+end
 
 function construct_auxiliary_states(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64,V::Float64)
     psi_inf = MPS()  
 
-    if V > 0.0
+    if V >= 0.0
         # if V positive, repulsion -> 101010... and 010101 ... as initial state
         ####
         # get all relevant state vectors

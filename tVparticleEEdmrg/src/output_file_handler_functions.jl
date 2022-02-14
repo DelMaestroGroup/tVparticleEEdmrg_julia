@@ -51,6 +51,16 @@ function write_str(fh::FileOutputHandler,handler_name::String,str::String)
     write_flush(file,str,fh.flush_on_write)
     return nothing
 end
+"""Write string to all files in handler."""
+function write_str(fh::FileOutputHandler,str::String) 
+    if ~fh.open
+        error("Try to write to OutputFileHandler that is already closed.")
+    end
+    for file in fh.files_list
+        write_flush(file,str,fh.flush_on_write)
+    end
+    return nothing
+end
 """Close all files."""
 function Base.close(fh::FileOutputHandler)
     if ~fh.open
