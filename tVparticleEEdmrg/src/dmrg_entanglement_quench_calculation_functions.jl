@@ -27,7 +27,7 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
     end 
     # flatten and sort V
     V_array = sort(vcat(V_array...))
-    nV = len(V_array)
+    nV = length(V_array)
     # unpack other parameters
     V0 = params[:V0]
     Vp0 = params[:Vp0]
