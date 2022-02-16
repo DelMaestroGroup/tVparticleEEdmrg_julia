@@ -4,6 +4,9 @@ using ITensors
 using Random
 using LinearAlgebra
 using ProgressBars
+using Tdvp
+using MKL
+#using TimeEvoMPS
 
 function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOutputHandler)
   ### Unpacking variables ###
@@ -32,8 +35,7 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
     V0 = params[:V0]
     Vp0 = params[:Vp0]
     Vp = params[:Vp]
-    # Construct time array
-    nTimes::Int64 = Int64(abs(params[:time_max])/params[:time_step]) + 1
+    # Construct time array 
     dt::Float64 = params[:time_step]
     times = collect(Float64,0.0:dt:params[:time_max])
 
@@ -48,7 +50,7 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
         write_str(output_fh,"# V = $(V)\n")
         println("\nEvolution $(iV)/$(nV) for V=$(V) ... ")
         # perform time evolution, entanglement calculation, and write to files (need to copy state psi as will be changed in the function)
-        compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug])      
+        compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug],tdvp=params[:tdvp])      
     end
 
     return nothing
@@ -82,23 +84,35 @@ Returns:
 function compute_entanglement_quench(
     L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond, times::Vector{Float64}, dt::Float64,
     sites::Vector{Index{Vector{Pair{QN, Int64}}}}, psi::MPS, psi_bot_vec::Vector{MPS}, psi_inf::MPS,
-    Asize::Int64,ℓsize::Int64,spatial::Bool,output_fh::FileOutputHandler;debug::Bool=false,trotter::Bool=true)
+    Asize::Int64,ℓsize::Int64,spatial::Bool,output_fh::FileOutputHandler;debug::Bool=false,trotter::Bool=true,tdvp::Bool=false)
 
 
-    if trotter && Vp == 0 
+    if ~tdvp && trotter && Vp == 0 
        trotter_gates = create_trotter_gates(sites,dt,L,N,t,V,Vp,boundary)
-    else
-        print("Vp!=0 not implemented exit()")
+    elseif tdvp
+        H = create_hamiltonian(sites,L,N,t,V,Vp,boundary) 
+        projH = ProjMPO(H)
+        H = nothing
+    else Vp != 0.0
+        print("Vp!=0 not implemented for trotter gates exit()")
         exit(1)
         # H = create_hamiltonian(sites,L,N,t,V,Vp,boundary)
-        # expiHt = exp(-1.0im*dt*H)
+        # expiHt = exp(-1.0im*dt*H) 
     end
 
     for time in ProgressBar(times) 
         # perform one time evolution step on psi 
         # skip first step at t=0 to cover initial state V0, Vp0
         if time > 0
-            psi = apply(trotter_gates,psi;cutoff=1e-14)
+            if tdvp
+            #     # This is a placeholder for including tdvp once it was introduced in the julia version of ITensor.
+            #     # As soon as it is there, just include it below, the rest is already setup for it.
+            #     error("tdvp is currently not implemented in ITensor for julia. This is just a placeholder flag --tdvp.")
+            #     #tdvp!(psi,H,dt,dt;hermitian=true)
+                tdvp_step!(psi,projH,dt; hermitian=true,cutoff=1e-14,exp_tol=1e-12,krylovdim=20,maxiter=50)
+            else
+                psi = apply(trotter_gates,psi;cutoff=1e-14)
+            end
         end
 
         # compute entanglement and write to files

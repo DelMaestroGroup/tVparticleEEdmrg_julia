@@ -34,3 +34,7 @@ tVparticleEEdmrg/test/*.dat
 tVparticleEEdmrg/out
 tVparticleEEdmrg/out/*
 *.dat
+
+# profiling data
+tVparticleEEdmrg/profiling
+tVparticleEEdmrg/profiling/*

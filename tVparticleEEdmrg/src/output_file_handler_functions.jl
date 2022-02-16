@@ -17,7 +17,7 @@ function add!(fh::FileOutputHandler,file::IOStream,data_to_file_function::Functi
         error("Try to add to OutputFileHandler that is already closed.")
     end
     if haskey(fh.handler_name_lookup,handler_name)
-        error("File handeler names must be unique. Tried to add new file handler with already existing name ", handler_name,".")
+        error("File handler names must be unique. Tried to add new file handler with already existing name ", handler_name,".")
     end
     fh.nEntries += 1
     push!(fh.files_list,file)

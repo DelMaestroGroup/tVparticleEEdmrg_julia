@@ -4,6 +4,11 @@ The array is made up of two subarrays containing positive and non-positive value
 ordered with the smallest absolute values first.
 """
 function lin_range(Vstart::Float64,Vend::Float64,nVals::Int64) 
+
+    if Vstart == Vend || nVals==1
+        return [Vstart]
+    end
+
     v_neg_reverse = -2
     #v_pos_reverse = +2 # for the positive range, keep the direction
     
@@ -40,6 +45,11 @@ The array is made up of two subarrays containing positive and non-positive value
 ordered with the smallest absolute values first.
 """
 function log_range(Vstart::Float64,Vend::Float64,nVals::Int64)
+
+    if Vstart == Vend || nVals==1
+        return [Vstart]
+    end
+
     v_neg_reverse = -2
     #v_pos_reverse = +2 # for the positive range, keep the direction
 

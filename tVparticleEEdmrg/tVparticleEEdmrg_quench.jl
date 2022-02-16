@@ -11,11 +11,13 @@ using DMRGEntanglementCalculation
 using OutputFileHandler
 using Random
 using Utils
+using KrylovKit: exponentiate
 
 #Pkg.add("ITensors")
 #Pkg.add("ArgParse")
 #Pkg.add("ProgressBars")
 #Pkg.add("BenchmarkTools")
+#Pkg.add("https://github.com/orialb/TimeEvoMPS.jl")
 
 
 # ------------------------------------------------------------------------------
@@ -110,14 +112,17 @@ function parse_commandline()
     end
     add_arg_group(s, "time parameters")
     @add_arg_table s begin 
-    "--time-max" 
-        help = "maximum time"
-        arg_type = Float64
-        default = 5.0
-    "--time-step" 
-        help = "time step"
-        arg_type = Float64
-        default = 0.1 
+        "--tdvp"
+            help = "Use tdvp algorithm from https://github.com/orialb/TimeEvoMPS.jl"
+            action = :store_true 
+        "--time-max" 
+            help = "maximum time"
+            arg_type = Float64
+            default = 5.0
+        "--time-step" 
+            help = "time step"
+            arg_type = Float64
+            default = 0.1 
     end
     add_arg_group(s, "dmrg parameter")
     @add_arg_table s begin
@@ -204,8 +209,11 @@ function main()
     else
         out_folder = c[:out]
     end   
-    println("TODO: Add V0 and Vp0 to calculation_label!")
+    println("TODO: Add V0 and Vp0 to calculation_label!") 
     calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tsta%+5.3f_tend%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] 0.0 c[:time_max] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
+    if c[:tdvp]
+        calculation_label = calculation_label*"_tdvp"
+    end
     if c[:boundary] == OBC
         calculation_label = calculation_label*"_obc"
     end
