@@ -428,7 +428,7 @@ function compute_particle_EE_and_obdm(psi::MPS,Asize::Int64,N::Int64)
         particle_EE[α] = compute_Renyi(α,λs,lnN)
     end 
 
-    return particle_EE, obdm[N,:]/N
+    return particle_EE, real.(obdm[N,:]/N)
     
 end
 

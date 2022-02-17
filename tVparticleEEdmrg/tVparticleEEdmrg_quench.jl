@@ -302,7 +302,7 @@ function main()
     if c[:obdm]
         handler_name = "obdm"
         # function to convert data to string data = (t, obdm entries)
-        out_str_obdm_05 = (data)->@sprintf "%24.12E%s\n" data[1] join([@sprintf " (%.12E%+.12Ej)" sp... for sp in zip(real.(data[2]),imag.(data[2]))], "")
+        out_str_obdm_05 = (data)->@sprintf "%24.12E%s\n" data[1] join([@sprintf "%24.12E" sp... for sp in data[2]], "")
         # open file
         path_obdm_05 = joinpath(out_folder,@sprintf "obdm_%s.dat" calculation_label)
         file_obdm_05 = open(path_obdm_05,"w")
@@ -311,7 +311,7 @@ function main()
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
-        write_str(output_fh,handler_name,@sprintf "#%24s%s\n" "t (|i-j|-->)" join([@sprintf "%24.12E" xi for xi in (-c[:N]+1):c[:N]], "") )      
+        write_str(output_fh,handler_name,@sprintf "#%24s%s\n" "t (|i-j|-->)" join([@sprintf "%24d" xi for xi in (-c[:N]+1):c[:N]], "") )      
     end
 
  # _____________3_Calculation______________________ 
