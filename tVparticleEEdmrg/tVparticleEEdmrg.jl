@@ -36,6 +36,9 @@ function parse_commandline()
         "--spatial"
             help = "output the spatial entanglement entropy for ℓ = M/2"
             action = :store_true  
+        "--obdm"
+            help = "store the mid row of the obdm to file"
+            action = :store_true 
         "--no-flush"
             help = "do not flush write buffer to output files in after computation for each V" 
             action = :store_true 
@@ -205,6 +208,21 @@ function main()
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_str(output_fh,handler_name, "# start time $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))\n")
         write_str(output_fh,handler_name,@sprintf "#%24s%24s%24s%24s\n" "V" "energy" "<psi|psi_inf>" "<psi|psi_bot1> ..." )      
+    end
+
+    # 2.5 obdm printing
+    if c[:obdm]
+        handler_name = "obdm"
+        # function to convert data to string data = (V, obdm entries)
+        out_str_obdm_05 = (data)->@sprintf "%24.12E%s\n" data[1] join([@sprintf "%24.12E" sp for sp in data[2]], "")
+        # open file
+        path_obdm_05 = joinpath(out_folder,@sprintf "obdm_%s.dat" calculation_label)
+        file_obdm_05 = open(path_obdm_05,"w")
+        # add to file_handler
+        add!(output_fh,file_obdm_05,out_str_obdm_05,handler_name)
+        # write initial header
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
+        write_str(output_fh,handler_name,@sprintf "#%24s%s\n" "V (|i-j|-->)" join([@sprintf "%24.12E" xi for xi in (-c[:N]+1):c[:N]], "") )      
     end
 
  # _____________3_Calculation______________________ 

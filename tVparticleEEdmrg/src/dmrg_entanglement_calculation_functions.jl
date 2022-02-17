@@ -3,7 +3,7 @@
 using ITensors
 using Random
 using LinearAlgebra
-using ProgressBars
+using ProgressBars 
 
 function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::FileOutputHandler)
   ### Unpacking variables ###
@@ -38,7 +38,7 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::F
             println("Calculation ",i,"/",length(V_array)," form ",Vs[1] ," to ", Vs[end] ,"...")
             psi, psi_bot_vec, psi_inf = create_initial_state(sites,L,N,Vs[1])
             for V in ProgressBar(Vs) 
-                psi, particle_ee, spatial_ee, accessible_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial];debug=params[:debug],output_fh=output_fh)
+                psi, particle_ee, spatial_ee, accessible_ee = compute_dmrg_entanglement_equilibrium(L,N,t,V,Vp,boundary,sites,psi,psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial];debug=params[:debug],save_obdm=params[:obdm],output_fh=output_fh)
  
                 write(output_fh,"particleEE",V,particle_ee)
                 if params[:spatial]
@@ -63,7 +63,7 @@ Returns:
 function compute_dmrg_entanglement_equilibrium(
     L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond,
     sites::Vector{Index{Vector{Pair{QN, Int64}}}}, psi::MPS, psi_bot_vec::Vector{MPS}, psi_inf::MPS,
-    Asize::Int64,ℓsize::Int64,spatial::Bool;debug::Bool=false,output_fh::Union{IO,AbstractString,FileOutputHandler}=stdout)
+    Asize::Int64,ℓsize::Int64,spatial::Bool;debug::Bool=false,save_obdm::Bool=false,output_fh::Union{IO,AbstractString,FileOutputHandler}=stdout)
 
     H = create_hamiltonian(sites,L,N,t,V,Vp,boundary)
 
@@ -90,7 +90,12 @@ function compute_dmrg_entanglement_equilibrium(
     end
 
     # compute particle entanglement entropy
-    particle_EE = compute_particle_EE(copy(psi),Asize,N)
+    if save_obdm && isa(output_fh,FileOutputHandler)
+        particle_EE, obdm = compute_particle_EE_and_obdm(copy(psi),Asize,N)
+        write(output_fh,"obdm",V,obdm)
+    else
+        particle_EE = compute_particle_EE(copy(psi),Asize,N)
+    end
 
 
     if spatial
@@ -402,6 +407,28 @@ function compute_particle_EE(psi::MPS,Asize::Int64,N::Int64)
     end 
 
     return particle_EE
+    
+end
+
+"""Obtain the obdm in addition. Only the middle row of the one body density
+matrix is returned."""
+function compute_particle_EE_and_obdm(psi::MPS,Asize::Int64,N::Int64)
+    lnN = log(N)
+
+    # compute one body density matrix 
+    obdm = correlation_matrix(psi,"Cdag","C")  
+    #println("\n\n",reduce((x,y) -> max.(x,y), imag(obdm[N,:]/N)), " hermitian?: ", ishermitian(obdm),"\n\n")
+
+    # get obdm spectrum
+    λs = abs.(eigvals(obdm))/N
+
+    # get Renyi entanglement entropies
+    particle_EE = Vector{Float64}(undef,11)
+    for α = 1:11
+        particle_EE[α] = compute_Renyi(α,λs,lnN)
+    end 
+
+    return particle_EE, obdm[N,:]/N
     
 end
 

@@ -50,7 +50,7 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
         write_str(output_fh,"# V = $(V)\n")
         println("\nEvolution $(iV)/$(nV) for V=$(V) ... ")
         # perform time evolution, entanglement calculation, and write to files (need to copy state psi as will be changed in the function)
-        compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug],tdvp=params[:tdvp])      
+        compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug],tdvp=params[:tdvp],save_obdm=params[:obdm])      
     end
 
     return nothing
@@ -84,11 +84,17 @@ Returns:
 function compute_entanglement_quench(
     L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond, times::Vector{Float64}, dt::Float64,
     sites::Vector{Index{Vector{Pair{QN, Int64}}}}, psi::MPS, psi_bot_vec::Vector{MPS}, psi_inf::MPS,
-    Asize::Int64,ℓsize::Int64,spatial::Bool,output_fh::FileOutputHandler;debug::Bool=false,trotter::Bool=true,tdvp::Bool=false)
+    Asize::Int64,ℓsize::Int64,spatial::Bool,output_fh::FileOutputHandler
+    ;
+    debug::Bool=false,
+    trotter::Bool=true,
+    first_order_trotter::Bool=false,
+    tdvp::Bool=false,
+    save_obdm::Bool=false)
 
 
     if ~tdvp && trotter && Vp == 0 
-       trotter_gates = create_trotter_gates(sites,dt,L,N,t,V,Vp,boundary)
+       trotter_gates = create_trotter_gates(sites,dt,L,N,t,V,Vp,boundary;first_order_trotter=first_order_trotter)
     elseif tdvp
         H = create_hamiltonian(sites,L,N,t,V,Vp,boundary) 
         projH = ProjMPO(H)
@@ -116,7 +122,12 @@ function compute_entanglement_quench(
         end
 
         # compute entanglement and write to files
-        particle_ee = compute_particle_EE(copy(psi),Asize,N)
+        if save_obdm
+            particle_ee, obdm = compute_particle_EE_and_obdm(copy(psi),Asize,N)
+            write(output_fh,"obdm",time,obdm)  
+        else
+            particle_ee = compute_particle_EE(copy(psi),Asize,N)
+        end
         write(output_fh,"particleEE",time,particle_ee) 
 
         if spatial
@@ -135,7 +146,7 @@ function compute_entanglement_quench(
 end
 
  
-function create_trotter_gates(sites::Vector{Index{Vector{Pair{QN, Int64}}}},dt::Float64,L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond)
+function create_trotter_gates(sites::Vector{Index{Vector{Pair{QN, Int64}}}},dt::Float64,L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond;first_order_trotter::Bool=false)
     # Time gates: https://itensor.github.io/ITensors.jl/dev/tutorials/MPSTimeEvolution.html
     # Input operator terms which define
     # a Hamiltonian matrix, and convert
@@ -146,7 +157,11 @@ function create_trotter_gates(sites::Vector{Index{Vector{Pair{QN, Int64}}}},dt::
         s1 = sites[j]
         s2 = sites[j+1]
         hj = -t * op("Cdag",s1) * op("C", s2) -t * op("Cdag",s2) * op("C", s1) + V * op("N", s1) * op("N", s2) 
-        Gj = exp(-1.0im * dt/2 * hj)
+        if first_order_trotter
+            Gj = exp(-1.0im * dt * hj)
+        else # second order Trotter gates by defauls
+            Gj = exp(-1.0im * dt/2 * hj)
+        end
         push!(gates,Gj)
     end
     if boundary == PBC
@@ -154,10 +169,16 @@ function create_trotter_gates(sites::Vector{Index{Vector{Pair{QN, Int64}}}},dt::
         s1 = sites[L]
         s2 = sites[1]
         hN = -t * factor * op("Cdag",s1) * op("C", s2) -t * factor * op("Cdag",s2) * op("C", s1) + V * op("N", s1) * op("N", s2) 
-        GN = exp(-1.0im * dt/2 * hN)
+        if first_order_trotter
+            GN = exp(-1.0im * dt * hN)
+        else # second order Trotter gates by defauls
+            GN = exp(-1.0im * dt/2 * hN)
+        end
         push!(gates,GN)
     end
-    append!(gates,reverse(gates))
+    if ~first_order_trotter
+        append!(gates,reverse(gates))
+    end
 
     return gates
 end

@@ -39,6 +39,15 @@ function parse_commandline()
         "--spatial"
             help = "output the spatial entanglement entropy for ℓ = M/2"
             action = :store_true  
+        "--obdm"
+            help = "store the mid row of the obdm to file"
+            action = :store_true 
+        "--tdvp"
+            help = "Use tdvp algorithm from https://github.com/orialb/TimeEvoMPS.jl"
+            action = :store_true 
+        "--first-order-trotter"
+            help = "use a first order Trotter decomposition instead of 2nd order (ignored if --tvdp is set)"
+            action = :store_true 
         "--no-flush"
             help = "do not flush write buffer to output files in after computation for each V" 
             action = :store_true 
@@ -112,9 +121,6 @@ function parse_commandline()
     end
     add_arg_group(s, "time parameters")
     @add_arg_table s begin 
-        "--tdvp"
-            help = "Use tdvp algorithm from https://github.com/orialb/TimeEvoMPS.jl"
-            action = :store_true 
         "--time-max" 
             help = "maximum time"
             arg_type = Float64
@@ -159,6 +165,10 @@ function main()
     end
     if c[:ee] != 1
         print("Currently the dmrg calculation only supports one particle entanglement entropy not n=",c[:ee], " . exit()")
+        exit(1)
+    end
+    if c[:obdm] && c[:ee] > 1
+        print("Obdm can only be computed with n=1, but n=",c[:ee],". exit()")
         exit(1)
     end
 
@@ -216,6 +226,9 @@ function main()
     end
     if c[:boundary] == OBC
         calculation_label = calculation_label*"_obc"
+    end
+    if c[:first_order_trotter] 
+        calculation_label = calculation_label*"_trotter1"
     end
     # Create output file handlers
     output_fh = FileOutputHandler(~c[:no_flush])
@@ -280,9 +293,25 @@ function main()
         # add to file_handler
         add!(output_fh,file_debug_04,out_str_debug_04,handler_name)
         # write initial header
-        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
         write_str(output_fh,handler_name,@sprintf "#%24s%24s%24s\n" "t" "<psi|psi_inf>" "<psi|psi_bot1> ..." )      
+    end
+
+    # 2.5 obdm printing
+    if c[:obdm]
+        handler_name = "obdm"
+        # function to convert data to string data = (t, obdm entries)
+        out_str_obdm_05 = (data)->@sprintf "%24.12E%s\n" data[1] join([@sprintf " (%.12E%+.12Ej)" sp... for sp in zip(real.(data[2]),imag.(data[2]))], "")
+        # open file
+        path_obdm_05 = joinpath(out_folder,@sprintf "obdm_%s.dat" calculation_label)
+        file_obdm_05 = open(path_obdm_05,"w")
+        # add to file_handler
+        add!(output_fh,file_obdm_05,out_str_obdm_05,handler_name)
+        # write initial header
+        write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
+        write_info(output_fh,handler_name,c)
+        write_str(output_fh,handler_name,@sprintf "#%24s%s\n" "t (|i-j|-->)" join([@sprintf "%24.12E" xi for xi in (-c[:N]+1):c[:N]], "") )      
     end
 
  # _____________3_Calculation______________________ 
