@@ -22,11 +22,16 @@ module OutputFileHandler
 
     export  
         FileOutputHandler,
+        SnapshotHandler,
         add!,
         write,
         write_str, 
-        close
+        close,
+        get_path,
+        read,
+        time_for_snapshot
      
 
     include("output_file_handler_functions.jl")
+    include("snapshot_handler_functions.jl")
 end

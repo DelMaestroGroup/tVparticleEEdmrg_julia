@@ -1,11 +1,8 @@
-
-#using OutputFileHandler 
-using ITensors
 using Random
 using LinearAlgebra
 using ProgressBars
 using Tdvp
-using MKL
+using MKL 
 #using TimeEvoMPS
 
 function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOutputHandler)
@@ -43,14 +40,14 @@ function tV_dmrg_ee_calclation_quench(params::Dict{Symbol,Any},output_fh::FileOu
     # setup lattice
     sites = siteinds("Fermion",L; conserve_qns=true)
     # solve equilibrium problem for t<0
-    psi, psi_inf, psi_bot_vec = compute_equilibium_groundstate(sites,L,N,t,V0,Vp0,boundary)
+    psi, psi_inf, psi_bot_vec = compute_equilibium_groundstate(sites,L,N,t,V0,Vp0,boundary)  
 
     for (iV, V) in enumerate(V_array)
         # print # V to all files
         write_str(output_fh,"# V = $(V)\n")
         println("\nEvolution $(iV)/$(nV) for V=$(V) ... ")
         # perform time evolution, entanglement calculation, and write to files (need to copy state psi as will be changed in the function)
-        compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug],tdvp=params[:tdvp],save_obdm=params[:obdm])      
+        compute_entanglement_quench(L,N,t,V,Vp,boundary,times,dt,sites,copy(psi),psi_bot_vec,psi_inf,Asize,ℓsize,params[:spatial],output_fh;debug=params[:debug],tdvp=params[:tdvp],save_obdm=params[:obdm],first_order_trotter=params[:first_order_trotter])      
     end
 
     return nothing
@@ -60,16 +57,16 @@ function compute_equilibium_groundstate(sites::Vector{Index{Vector{Pair{QN, Int6
     # TODO analytic solution if V0==0 && Vp0==0
 
     # Hamiltonian before quench
-    H = create_hamiltonian(sites,L,N,t,V0,Vp0,boundary) 
+    H = create_hamiltonian(sites,L,N,t,V0,Vp0,boundary)  
     # dmrg parameters
     sweeps = Sweeps(10) 
     setmaxdim!(sweeps, 100, 200, 400, 800, 1600)
     setcutoff!(sweeps, 1e-12)
     setnoise!(sweeps, 1e-6, 1e-7, 1e-8, 0.0)
     # initial state
-    psi, psi_bot_vec, psi_inf = create_initial_state(sites,L,N,V0)
+    psi, psi_bot_vec, psi_inf = create_initial_state(sites,L,N,V0) 
     # dmrg step
-    energy, psi = dmrg(H,psi_bot_vec,psi,sweeps;outputlevel=0)
+    energy, psi = dmrg(H,psi_bot_vec,psi,sweeps;outputlevel=0) 
     return 1/norm(psi)*psi, psi_inf, psi_bot_vec
 end
 
@@ -91,7 +88,6 @@ function compute_entanglement_quench(
     first_order_trotter::Bool=false,
     tdvp::Bool=false,
     save_obdm::Bool=false)
-
 
     if ~tdvp && trotter && Vp == 0 
        trotter_gates = create_trotter_gates(sites,dt,L,N,t,V,Vp,boundary;first_order_trotter=first_order_trotter)
@@ -116,8 +112,8 @@ function compute_entanglement_quench(
             #     error("tdvp is currently not implemented in ITensor for julia. This is just a placeholder flag --tdvp.")
             #     #tdvp!(psi,H,dt,dt;hermitian=true)
                 tdvp_step!(psi,projH,dt; hermitian=true,cutoff=1e-14,exp_tol=1e-12,krylovdim=20,maxiter=50)
-            else
-                psi = apply(trotter_gates,psi;cutoff=1e-14)
+            else 
+                psi = apply(trotter_gates,psi;cutoff=1e-14)  
             end
         end
 

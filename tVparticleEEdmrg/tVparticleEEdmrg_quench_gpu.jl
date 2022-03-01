@@ -7,17 +7,13 @@ using Printf
 using ProgressBars
 using Dates
 using Pkg
-using DMRGEntanglementCalculation
-using OutputFileHandler
+using DMRGEntanglementCalculationGPU
+using OutputFileHandler  
 using Random
 using Utils
-using KrylovKit: exponentiate 
-
-#Pkg.add("ITensors")
-#Pkg.add("ArgParse")
-#Pkg.add("ProgressBars")
-#Pkg.add("BenchmarkTools")
-#Pkg.add("https://github.com/orialb/TimeEvoMPS.jl")
+using KrylovKit: exponentiate  
+using ITensors.HDF5 
+using ITensorGPU: MPS
 
 
 # ------------------------------------------------------------------------------
@@ -36,6 +32,13 @@ function parse_commandline()
         "--out"
             metavar = "FOLDER"
             help = "path to output folder"  
+        "--out-states"
+            metavar = "FOLDER"
+            help = "path to output folder for stat MPS snapshots, default is --out"  
+        "--snapshots-every" 
+            arg_type = Int
+            help = "number of gate applications before a snapshot of the time evolved MPS is saved to file, 0 means never. Snapshots are only saved before measurements, therefore actual snapshop frequency will depend on --consec-steps as well."  
+            default = 100
         "--spatial"
             help = "output the spatial entanglement entropy for ℓ = M/2"
             action = :store_true  
@@ -124,11 +127,19 @@ function parse_commandline()
         "--time-max" 
             help = "maximum time"
             arg_type = Float64
-            default = 5.0
+            default = 40.0
+        "--time-min" 
+            help = "start time, if not 0.0, a state file with a previously evolved state psi must be present."
+            arg_type = Float64
+            default = 0.0
         "--time-step" 
             help = "time step"
             arg_type = Float64
-            default = 0.1 
+            default = 0.01 
+        "--consec-steps"
+            help = "consecutive time evolution steps before an entanglement measurement is performed."
+            arg_type = Int64
+            default = 10
     end
     add_arg_group(s, "dmrg parameter")
     @add_arg_table s begin
@@ -218,9 +229,14 @@ function main()
         out_folder = "./"
     else
         out_folder = c[:out]
+    end 
+    if c[:out_states] === nothing
+        states_out_folder = out_folder
+    else
+        states_out_folder = c[:out_states]
     end   
     println("TODO: Add V0 and Vp0 to calculation_label!") 
-    calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tsta%+5.3f_tend%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] 0.0 c[:time_max] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
+    calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tsta%+5.3f_tend%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:time_min] c[:time_max] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
     if c[:tdvp]
         calculation_label = calculation_label*"_tdvp"
     end
@@ -242,7 +258,7 @@ function main()
         path_pe_01 = joinpath(out_folder,@sprintf "particle_entanglement_n%02d_%s.dat" c[:ee] calculation_label)
         file_pe_01 = open(path_pe_01,"w")
         # add to file_handler
-        add!(output_fh,file_pe_01,out_str_pe_01,handler_name)
+        OutputFileHandler.add!(output_fh,file_pe_01,out_str_pe_01,handler_name)
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
@@ -250,7 +266,7 @@ function main()
  
     # 2.2. output of spatial entanglement (se_02)
     ℓsize = Int(c[:L]/2)
-    if c[:spatial]    
+    if c[:spatial]   
         handler_name = "spatialEE"
         # function to convert data to string data = (t, entropies)
         out_str_se_02 = (data)->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
@@ -258,7 +274,7 @@ function main()
         path_se_02 = joinpath(out_folder,@sprintf "spatial_entanglement_l%02d_%s.dat" ℓsize calculation_label)
         file_se_02 = open(path_se_02,"w")
         # add to file_handler
-        add!(output_fh,file_se_02,out_str_se_02,handler_name)
+        OutputFileHandler.add!(output_fh,file_se_02,out_str_se_02,handler_name)
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
@@ -275,7 +291,7 @@ function main()
         path_ae_03 = joinpath(out_folder,@sprintf "accessible_entanglement_l%02d_%s.dat" ℓsize calculation_label)
         file_ae_03 = open(path_ae_03 ,"w")
         # add to file_handler
-        add!(output_fh,file_ae_03,out_str_ae_03,handler_name)
+        OutputFileHandler.add!(output_fh,file_ae_03,out_str_ae_03,handler_name)
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
@@ -291,7 +307,7 @@ function main()
         path_debug_04 = joinpath(out_folder,@sprintf "debug_%s.dat" calculation_label)
         file_debug_04 = open(path_debug_04,"w")
         # add to file_handler
-        add!(output_fh,file_debug_04,out_str_debug_04,handler_name)
+        OutputFileHandler.add!(output_fh,file_debug_04,out_str_debug_04,handler_name)
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
@@ -307,16 +323,43 @@ function main()
         path_obdm_05 = joinpath(out_folder,@sprintf "obdm_%s.dat" calculation_label)
         file_obdm_05 = open(path_obdm_05,"w")
         # add to file_handler
-        add!(output_fh,file_obdm_05,out_str_obdm_05,handler_name)
+        OutputFileHandler.add!(output_fh,file_obdm_05,out_str_obdm_05,handler_name)
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
         write_str(output_fh,handler_name,@sprintf "#%24s%s\n" "t (|i-j|-->)" join([@sprintf "%24d" xi for xi in (-c[:N]+1):c[:N]], "") )      
+    end 
+
+    # 2.6 state snapshots
+    snapshot_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
+    snapshot_sh = SnapshotHandler() 
+    handler_name = "state"
+    # function to convert data to string data = (t, obdm entries)
+    function write_out(path,psi) 
+        println("Save snapshot to: $(path)...")
+        file = h5open(path,"w")
+        write(file,"psi" ,psi)
+        close(file)
+        return nothing
     end
+    function read_in(path) 
+        println("Load snapshot from: $(path)...")
+        file = h5open(path,"r")
+        psi = read(file,"psi",MPS) 
+        close(file)
+        return psi
+    end
+    # open file
+    function path_generator_state_06(t::Float64) 
+        return joinpath(states_out_folder,@sprintf "state_%s_t%4.4f.dat" snapshot_label t) 
+    end
+    # add to file_handler
+    OutputFileHandler.add!(snapshot_sh,path_generator_state_06,write_out,read_in,c[:snapshots_every],handler_name) 
+   
 
  # _____________3_Calculation______________________ 
     Random.seed!(c[:seed]) 
-    tV_dmrg_ee_calclation_quench(c,output_fh) 
+    tV_dmrg_ee_calclation_quench_gpu(c,output_fh,snapshot_sh) 
 
  # ________4_Output_Finalization___________________ 
     for (h_name,) in output_fh.handler_name_lookup

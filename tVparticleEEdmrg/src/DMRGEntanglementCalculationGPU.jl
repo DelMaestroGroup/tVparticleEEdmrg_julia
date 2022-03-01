@@ -5,15 +5,17 @@ Module DMRGEntanglementCalculation contains all function to calcuate the entangl
 Usage: 
      
 """
-module DMRGEntanglementCalculation
+module DMRGEntanglementCalculationGPU
     using Base
     using OutputFileHandler
     using ITensors
+    using ITensorGPU
     using Utils
 
     export  
         tV_dmrg_ee_calclation_equilibrium,
-        tV_dmrg_ee_calclation_quench, 
+        tV_dmrg_ee_calclation_quench,
+        tV_dmrg_ee_calclation_quench_gpu,
         BdryCond, PBC, OBC
      
     """
@@ -24,5 +26,6 @@ module DMRGEntanglementCalculation
     @doc "Open boundary conditions." OBC
 
     include("dmrg_entanglement_calculation_functions.jl")
-    include("dmrg_entanglement_quench_calculation_functions.jl") 
+    include("dmrg_entanglement_quench_calculation_functions.jl")
+    include("dmrg_entanglement_quench_calculation_functions_gpu.jl")
 end

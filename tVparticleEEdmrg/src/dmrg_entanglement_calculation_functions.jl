@@ -160,7 +160,7 @@ function compute_dmrg_entanglement_equilibrium(
     return    particle_EE, zeros(Float64,size(particle_EE)), zeros(Float64,size(accessible_EE))
 end
 
-function create_hamiltonian(sites::Vector{Index{Vector{Pair{QN, Int64}}}},L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond)
+function create_hamiltonian(sites::AbstractVector,L::Int64,N::Int64,t::Float64,V::Float64,Vp::Float64,boundary::BdryCond)
  
     # Input operator terms which define
     # a Hamiltonian matrix, and convert
@@ -413,7 +413,7 @@ end
 """Obtain the obdm in addition. Only the middle row of the one body density
 matrix is returned."""
 function compute_particle_EE_and_obdm(psi::MPS,Asize::Int64,N::Int64)
-    lnN = log(N)
+    lnN = log(N) 
 
     # compute one body density matrix 
     obdm = correlation_matrix(psi,"Cdag","C")  

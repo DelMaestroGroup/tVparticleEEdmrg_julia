@@ -161,8 +161,8 @@ function main()
         write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "V" "S₁(n=$(Asize))" "S₂(n=$(Asize))" "S₃(n=$(Asize))" "S₄(n=$(Asize))" "S₅(n=$(Asize))" "S₆(n=$(Asize))" "S₇(n=$(Asize))" "S₈(n=$(Asize))" "S₉(n=$(Asize))" "S₁₀(n=$(Asize))" "S₀₋₅(n=$(Asize))")
  
     # 2.2. output of spatial entanglement (se_02)
-    if c[:spatial]   
-        ℓsize = Int(c[:L]/2)
+    ℓsize = Int(c[:L]/2)
+    if c[:spatial]    
         handler_name = "spatialEE"
         # function to convert data to string data = (V, entropies)
         out_str_se_02 = (data)->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
