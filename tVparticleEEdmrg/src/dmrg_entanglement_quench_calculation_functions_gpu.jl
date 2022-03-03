@@ -264,7 +264,7 @@ function compute_entanglement_quench_gpu(
     tdvp::Bool=false,
     save_obdm::Bool=false) 
 
-    ##psi = gpu(psi) 
+    psi = gpu(psi) 
 
     if ~tdvp && trotter && Vp == 0 
        trotter_gates = create_trotter_gates_gpu(sites,dt,L,N,t,V,Vp,boundary;first_order_trotter=first_order_trotter)
@@ -302,35 +302,33 @@ function compute_entanglement_quench_gpu(
         end  
 
         # for a measurement need cpu at the moment
-        psi = cpu(psi)
+        psi_cpu = cpu(psi)
         # save snapshot to file when requested
         if time_for_snapshot(snapshot_sh,"state",it)
-            write(snapshot_sh,"state",time,psi)
+            write(snapshot_sh,"state",time,psi_cpu)
         end
         # compute entanglement and write to files
         if save_obdm
-            particle_ee, obdm = compute_particle_EE_and_obdm(copy(psi),Asize,N)
+            particle_ee, obdm = compute_particle_EE_and_obdm(psi_cpu,Asize,N)
             write(output_fh,"obdm",time,obdm)  
         else
-            particle_ee = compute_particle_EE(copy(psi),Asize,N)
+            particle_ee = compute_particle_EE(psi_cpu,Asize,N)
         end
         write(output_fh,"particleEE",time,particle_ee) 
 
         if spatial
-            spatial_ee, accessible_ee = compute_spatial_EE(copy(psi),ℓsize)
+            spatial_ee, accessible_ee = compute_spatial_EE(copy(psi_cpu),ℓsize)
             write(output_fh,"spatialEE",time,spatial_ee)
             write(output_fh,"accessibleEE",time,accessible_ee)
         end
 
         # debug printing
         if debug  
-            sp_psi_psiinf = dot(psi,psi_inf) 
-            sp_psi_psibot = [dot(psi,psi_bot) for psi_bot in psi_bot_vec] 
+            sp_psi_psiinf = dot(psi_cpu,psi_inf) 
+            sp_psi_psibot = [dot(psi_cpu,psi_bot) for psi_bot in psi_bot_vec] 
             write(output_fh,"debug",V,abs(sp_psi_psiinf),abs.(sp_psi_psibot)) 
         end
-
-        # move psi back to gpu for next iterations
-        psi = gpu(psi) 
+        psi_cpu = nothing
     end  
 end
 
