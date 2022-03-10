@@ -352,7 +352,7 @@ function create_trotter_gates_gpu(sites::Any,dt::Float64,L::Int64,N::Int64,t::Fl
         push!(gates,Gj)
     end
     if boundary == PBC
-        factor = (L/2 % 2 == 0) ? -1 : 1
+        factor = 1.0 # From comparison with ED, this factor is always 1 and not (N % 2 == 0) ? -1.0 : 1.0
         s1 = sites[L]
         s2 = sites[1]
         hN = -t * factor * op("Cdag",s1) * op("C", s2) -t * factor * op("Cdag",s2) * op("C", s1) + V * op("N", s1) * op("N", s2)
