@@ -161,7 +161,7 @@ function create_trotter_gates(sites::Vector{Index{Vector{Pair{QN, Int64}}}},dt::
         push!(gates,Gj)
     end
     if boundary == PBC
-        factor = 1.0 # From comparison with ED, this factor is always 1 and not (L/2 % 2 == 0) ? -1 : 1
+        factor = (L/2 % 2 == 0) ? -1 : 1
         s1 = sites[L]
         s2 = sites[1]
         hN = -t * factor * op("Cdag",s1) * op("C", s2) -t * factor * op("Cdag",s2) * op("C", s1) + V * op("N", s1) * op("N", s2) 
