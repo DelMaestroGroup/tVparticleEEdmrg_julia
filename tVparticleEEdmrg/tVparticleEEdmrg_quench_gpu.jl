@@ -132,6 +132,9 @@ function parse_commandline()
             help = "start time, if not 0.0, a state file with a previously evolved state psi must be present."
             arg_type = Float64
             default = 0.0
+        "--time-min-auto"
+            help = "if set, --time-min is ignored, the start time is the one with the state file with largest time that is saved in the --out-states directory (if none use 0.0)." 
+            action = :store_true 
         "--time-step" 
             help = "time step"
             arg_type = Float64
@@ -182,6 +185,34 @@ function main()
         print("Obdm can only be computed with n=1, but n=",c[:ee],". exit()")
         exit(1)
     end
+    if c[:out] === nothing
+        out_folder = "./"
+    else
+        out_folder = c[:out]
+    end 
+    if c[:out_states] === nothing
+        states_out_folder = out_folder
+    else
+        states_out_folder = c[:out_states]
+    end   
+    
+    # state file save locations
+    snapshot_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
+    function file_name_state(t::Float64)
+        return @sprintf "state_%s_t%4.4f.dat" snapshot_label t
+    end 
+    if c[:time_min_auto]
+        
+        files_there = readdir(states_out_folder)
+        for time_guess in c[:time_max]:-c[:time_step]:0.0
+            path = file_name_state(time_guess)
+            c[:time_min] = time_guess
+            if path in files_there 
+                break
+            end
+        end
+        println("--time-min-auto found state file for t=$(time_guess).")
+    end
 
  # _____________2_Output_Setup___________________
  #
@@ -225,16 +256,6 @@ function main()
         return nothing
     end
 
-    if c[:out] === nothing
-        out_folder = "./"
-    else
-        out_folder = c[:out]
-    end 
-    if c[:out_states] === nothing
-        states_out_folder = out_folder
-    else
-        states_out_folder = c[:out_states]
-    end   
     println("TODO: Add V0 and Vp0 to calculation_label!") 
     calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tsta%+5.3f_tend%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:time_min] c[:time_max] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
     if c[:tdvp]
@@ -331,7 +352,7 @@ function main()
     end 
 
     # 2.6 state snapshots
-    snapshot_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
+    # defined above: snapshot_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
     snapshot_sh = SnapshotHandler() 
     handler_name = "state"
     # function to convert data to string data = (t, obdm entries)
@@ -350,8 +371,9 @@ function main()
         return psi
     end
     # open file
+    # defined above: file_name_state 
     function path_generator_state_06(t::Float64) 
-        return joinpath(states_out_folder,@sprintf "state_%s_t%4.4f.dat" snapshot_label t) 
+        return joinpath(states_out_folder,file_name_state(t)) 
     end
     # add to file_handler
     OutputFileHandler.add!(snapshot_sh,path_generator_state_06,write_out,read_in,c[:snapshots_every],handler_name) 
