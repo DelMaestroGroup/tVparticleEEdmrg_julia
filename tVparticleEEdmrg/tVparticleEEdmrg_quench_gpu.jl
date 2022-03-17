@@ -211,7 +211,7 @@ function main()
                 break
             end
         end
-        println("--time-min-auto found state file for t=$(time_guess).")
+        println("--time-min-auto found state file for t=$(c[:time_min]).")
     end
 
  # _____________2_Output_Setup___________________
