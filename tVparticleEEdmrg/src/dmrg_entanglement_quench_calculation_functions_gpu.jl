@@ -338,6 +338,10 @@ function create_trotter_gates_gpu(sites::Any,dt::Float64,L::Int64,N::Int64,t::Fl
     # Input operator terms which define
     # a Hamiltonian matrix, and convert
     # these terms to an MPO tensor network 
+    #
+    # On the GPU it seems that fermions are implemented as hard-core bosons only and the
+    # string operators are missing. We therefore need periodic boundary conditions for 
+    # even N and odd N
  
     gates = ITensor[]
     for j=1:L-1
