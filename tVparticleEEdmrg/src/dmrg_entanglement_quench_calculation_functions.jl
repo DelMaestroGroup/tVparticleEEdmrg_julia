@@ -118,13 +118,20 @@ function compute_entanglement_quench(
         end
 
         # compute entanglement and write to files
-        if save_obdm
-            particle_ee, obdm = compute_particle_EE_and_obdm(copy(psi),Asize,N)
+        if save_obdm && isa(output_fh,FileOutputHandler) && Asize == 1 
+            particle_ee, obdm = compute_particle_EE_and_obdm(copy(psi),N)
             write(output_fh,"obdm",time,obdm)  
         else
-            particle_ee = compute_particle_EE(copy(psi),Asize,N)
+            if Asize == 1 
+                particle_ee = compute_particle_EE(copy(psi),N)
+            elseif Asize == 2
+                if save_obdm
+                    @warn "Skip obdm saving, currently only supported for n=1."
+                end
+                particle_ee = compute_particle_EE_n2(copy(psi),N)
+            end 
         end
-        write(output_fh,"particleEE",time,particle_ee) 
+        write(output_fh,"particleEE",time,particle_ee)  
 
         if spatial
             spatial_ee, accessible_ee = compute_spatial_EE(copy(psi),ℓsize)

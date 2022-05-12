@@ -307,12 +307,19 @@ function compute_entanglement_quench_gpu(
         if time_for_snapshot(snapshot_sh,"state",it)
             write(snapshot_sh,"state",time,psi_cpu)
         end
-        # compute entanglement and write to files
-        if save_obdm
-            particle_ee, obdm = compute_particle_EE_and_obdm(psi_cpu,Asize,N)
+        # compute entanglement and write to files 
+        if save_obdm && Asize == 1 
+            particle_ee, obdm = compute_particle_EE_and_obdm(psi_cpu,N)
             write(output_fh,"obdm",time,obdm)  
         else
-            particle_ee = compute_particle_EE(psi_cpu,Asize,N)
+            if Asize == 1 
+                particle_ee = compute_particle_EE(psi_cpu,N)
+            elseif Asize == 2
+                if save_obdm
+                    @warn "Skip obdm saving, currently only supported for n=1."
+                end
+                particle_ee = compute_particle_EE_n2(psi_cpu,N)
+            end
         end
         write(output_fh,"particleEE",time,particle_ee) 
 

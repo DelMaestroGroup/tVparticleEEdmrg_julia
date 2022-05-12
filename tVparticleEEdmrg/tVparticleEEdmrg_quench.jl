@@ -163,8 +163,8 @@ function main()
         print("Not at half-filling: the number of sites L=", c[:L]," and the number of particles N=",c[:N] ," exit()")
         exit(1)
     end
-    if c[:ee] != 1
-        print("Currently the dmrg calculation only supports one particle entanglement entropy not n=",c[:ee], " . exit()")
+    if c[:ee] != 1 && c[:ee] != 2
+        print("Currently the dmrg calculation only supports one particle entanglement (and two-particle entanglement, experimental) entropy not n=",c[:ee], " . exit()")
         exit(1)
     end
     if c[:obdm] && c[:ee] > 1
@@ -221,6 +221,9 @@ function main()
     end   
     println("TODO: Add V0 and Vp0 to calculation_label!") 
     calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_tsta%+5.3f_tend%+5.3f_tstep%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] 0.0 c[:time_max] c[:time_step] c[:V_start] c[:V_end] c[:V_num]
+    if c[:ee] == 2
+        calculation_label = calculation_label*"_n02"
+    end
     if c[:tdvp]
         calculation_label = calculation_label*"_tdvp"
     end

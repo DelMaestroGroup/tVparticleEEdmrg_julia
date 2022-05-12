@@ -90,11 +90,18 @@ function compute_dmrg_entanglement_equilibrium(
     end
 
     # compute particle entanglement entropy
-    if save_obdm && isa(output_fh,FileOutputHandler)
-        particle_EE, obdm = compute_particle_EE_and_obdm(copy(psi),Asize,N)
+    if save_obdm && isa(output_fh,FileOutputHandler) && Asize == 1 
+        particle_EE, obdm = compute_particle_EE_and_obdm(copy(psi),N) 
         write(output_fh,"obdm",V,obdm)
     else
-        particle_EE = compute_particle_EE(copy(psi),Asize,N)
+        if Asize == 1 
+            particle_EE = compute_particle_EE(copy(psi),N)
+        elseif Asize == 2
+            if save_obdm
+                @warn "Skip obdm saving, currently only supported for n=1."
+            end
+            particle_EE = compute_particle_EE_n2(copy(psi),N)
+        end
     end
 
 
@@ -104,11 +111,12 @@ function compute_dmrg_entanglement_equilibrium(
 
         return psi, particle_EE, spatial_EE, accessible_EE
     end
-    return    psi, particle_EE, zeros(Float64,size(particle_EE)), zeros(Float64,size(accessible_EE))
+    return    psi, particle_EE, zeros(Float64,size(particle_EE)), zeros(Float64,size(particle_EE))
 end
 
 """
 Constructs new initial psi0 and psi_bot and uses these to perform dmrg step. Then compute entanglement calculation.
+Currently only implemented for Asize=1.
 
 Returns: 
     particle_EE: particle entanglement entropies vector (1 van neumann, 2-10 Renyi, 11 negativity)
@@ -148,7 +156,7 @@ function compute_dmrg_entanglement_equilibrium(
     end
 
     # compute particle entanglement entropy
-    particle_EE = compute_particle_EE(psi,Asize,N)
+    particle_EE = compute_particle_EE(psi,N)
 
 
     if spatial
@@ -391,7 +399,7 @@ function compute_spatial_EE(psi::MPS,lsize::Int64)
     
 end
 
-function compute_particle_EE(psi::MPS,Asize::Int64,N::Int64)
+function compute_particle_EE(psi::MPS,N::Int64)
     lnN = log(N)
 
     # compute one body density matrix 
@@ -412,7 +420,7 @@ end
 
 """Obtain the obdm in addition. Only the middle row of the one body density
 matrix is returned."""
-function compute_particle_EE_and_obdm(psi::MPS,Asize::Int64,N::Int64)
+function compute_particle_EE_and_obdm(psi::MPS,N::Int64)
     lnN = log(N) 
 
     # compute one body density matrix 
@@ -485,4 +493,157 @@ function compute_InvRenyi(α::Int64,λs::Vector{Float64},offset::Float64 = 0.0)
     return 1/(1-(1.0/α)) * log(sum( λs.^(1.0/α) )) - offset
 
 end
+  
 
+function compute_particle_EE_n2(psi::MPS,N::Int64)
+    lnN = log(binomial(N,2))
+
+    # compute one body density matrix 
+    obdm_ijkl = correlation_matrix_n2(psi,N)
+    obdm = reshape_obdm(obdm_ijkl,N)
+
+    # get obdm spectrum 
+
+    λs = abs.(eigvals!(obdm))  
+    λs /= sum(λs) #(N*(N-1))
+
+    # get Renyi entanglement entropies
+    particle_EE = Vector{Float64}(undef,11)
+    for α = 1:11
+        particle_EE[α] = compute_Renyi(α,λs,lnN)
+    end 
+
+    return particle_EE
+    
+end
+  
+
+"""
+Function to compute the L x L x L x L (for L=2N sites) correlation array
+C_i,j,l,k = <psi| c_i^d c_j^d c_l c_k |psi> for the MPS state psi.
+
+If verbose is true, print a ProgressBar for the outermost loop.
+"""
+function correlation_matrix_n2(psi::MPS,N::Int64;verbose=false)
+    L = 2*N
+    obdm_ijkl = zeros(ComplexF64,L,L,L,L)
+    # get sites from MPS
+    s = siteinds(psi) 
+    # print progressbar if verbose
+    if verbose
+        iIter = ProgressBar(1:L)
+    else
+        iIter = 1:L
+    end
+    # loop over positions on the lattice, using commutation relations
+    # C(i,j,l,k)=-C(j,i,l,k)=-C(i,j,k,l)=C(j,i,k,l)
+    # and that the matrix element is real
+    # C(i,j,l,k) = C(l,k,i,j)
+    # and translational symmetry
+    # C(i,j,l,k) = phase * C(i+1,j+1,l+1,k+1) where phase = +-1 depending
+    # on the boundary conditions and how many operators were moved
+    # across the boundary by translation
+    for i in iIter
+        for j = 1:i-1 
+            for k = 1:i
+                for l = 1:k-1  
+                    # check if value was already assigned meaning,
+                    # this i,j,k,l is in a translational cycle that is
+                    # already covered
+                    # (this is the dirty, easy solution, maybe we can 
+                    # come up with a more clever design of the loops)
+                    if abs(obdm_ijkl[i,j,k,l]) != 0.0
+                        continue
+                    end
+                    # operator as AutoMPO, which is important such that
+                    # ITensors uses all fermion relations and also
+                    # sets orthogonality center, moves indices, etc.
+                    # It does not easily work to just apply these
+                    # operators one after the other to psi !
+                    operator = AutoMPO()
+                    operator += ("Cdag",i,"Cdag",j,"C",k,"C",l)
+                    # convert to real MPO to use in inner
+                    operator = MPO(operator,s)
+                    # compute matrix element
+                    element = inner(psi,operator,psi)
+                    
+                    # phase is due to boundary conditions when translation
+                    # moves operator over the edge
+                    phase = +1.0
+                    # just include all translations not caring about 
+                    # potentialy different cycle lengths ?
+                    for iT = 0:L-1
+                        if  (N % 2)==0
+                            if i + iT == L+1
+                                phase *= -1.0
+                            end
+                            if j + iT == L+1
+                                phase *= -1.0
+                            end
+                            if k + iT == L+1
+                                phase *= -1.0
+                            end
+                            if l + iT == L+1
+                                phase *= -1.0
+                            end
+                        end
+                        
+                        # effects of adding translations T 
+                        # <psi| T^d c_i^d c_j^d c_l c_k T |psi>
+                        # iT times
+                        i_ = (i + iT - 1) % L + 1
+                        j_ = (j + iT - 1) % L + 1
+                        k_ = (k + iT - 1) % L + 1
+                        l_ = (l + iT - 1) % L + 1
+                        # add the phase due to translation and bc
+                        element_ = phase*element
+                        # use C(i,j,l,k)=-C(j,i,l,k)=-C(i,j,k,l)=C(j,i,k,l)
+                        # and C(i,j,l,k) = C(l,k,i,j)
+                        obdm_ijkl[i_,j_,k_,l_] = element_
+                        obdm_ijkl[j_,i_,k_,l_] = -1.0*element_
+                        obdm_ijkl[i_,j_,l_,k_] = -1.0*element_
+                        obdm_ijkl[j_,i_,l_,k_] = element_
+                        obdm_ijkl[k_,l_,i_,j_] = element_
+                        obdm_ijkl[l_,k_,i_,j_] = -1.0*element_
+                        obdm_ijkl[k_,l_,j_,i_] = -1.0*element_
+                        obdm_ijkl[l_,k_,j_,i_] = element_
+                        
+                    end
+                end
+            end
+        end
+    end 
+    return obdm_ijkl
+end
+
+"""
+Function to reshape the L x L x L x L array C_i,j,l,k = <psi| c_i^d c_j^d c_l c_k |psi>
+to the obdm matrix of shape L^2 x L^2. Here no normalization is performed jet. The
+normalization factor N*(N-1) has to be applied elsewhere.  
+The basis has the form |i,k> were 1<= i<=L is the position of the first particle on the 
+lattice and k the position of the second particle.
+"""
+function reshape_obdm(obdm_ijkl::Array{ComplexF64},N::Int64)
+    L = 2*N
+    basis = Vector{Vector{Int64}}(undef,L*L-L)
+    obdm = zeros(ComplexF64,L*L,L*L)
+    # Pauli exclusion principle prevents |i,i>
+    i = 1
+    for j = 1:L
+        for k = 1:L
+            if k == j
+                continue
+            end
+            basis[i] = [j,k]
+            i += 1
+        end
+    end
+    for (i1,bs1) in enumerate(basis)
+        for (i2,bs2) in enumerate(basis)
+            obdm[i1,i2] = obdm_ijkl[bs1[1],bs1[2],bs2[1],bs2[2]]
+        end
+    end
+    #display(obdm)
+    return obdm
+
+end

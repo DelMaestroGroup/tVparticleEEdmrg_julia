@@ -127,7 +127,7 @@ function main()
         print("Not at half-filling: the number of sites L=", c[:L]," and the number of particles N=",c[:N] ," exit()")
         exit(1)
     end
-    if c[:ee] != 1
+    if c[:ee] != 1 && c[:ee] != 2
         print("Currently the dmrg calculation only supports one particle entanglement entropy not n=",c[:ee], " . exit()")
         exit(1)
     end
