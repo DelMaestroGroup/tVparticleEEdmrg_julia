@@ -80,6 +80,11 @@ function parse_commandline()
             help = "number of V values"
             arg_type = Int64
             default = 100 
+        "--V-list" 
+            nargs = '*' 
+            help = "multiple V values used as V_array and ignore V-start, V-end, V-step, logspace"
+            arg_type = Float64 
+            required = false
         "--logspace" 
             help = "logarithmic spacing of V values around 0"
             action = :store_true 
@@ -138,6 +143,14 @@ function main()
     else
         out_folder = c[:out]
     end   
+    # if V-list is used, overwrite V-start, V-end and V-num to create a unique filename for a given list
+    if  ~(c[:V_list]===nothing) && length(c[:V_list])> 0 
+        c[:V_start] = c[:V_list][1]
+        c[:V_end] = c[:V_list][end]
+        # unique value for the list (to avoid unintential overwriting) 
+        c[:V_num] = hash(c[:V_list])
+    end
+    # setup filenames
     calculation_label = @sprintf "M%02d_N%02d_t%+5.3f_Vp%+5.3f_Vsta%+5.3f_Vend%+5.3f_Vnum%04d" c[:L] c[:N] c[:t] c[:Vp] c[:V_start] c[:V_end] c[:V_num]
     if c[:boundary] == OBC
         calculation_label = calculation_label*"_obc"

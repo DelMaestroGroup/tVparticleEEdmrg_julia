@@ -20,7 +20,10 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::F
     ℓsize = div(L, 2)
     # Interaction paramers V, V' 
     # Split V in regions <0 and >0 and start from values closest to 0
-    if params[:logspace]
+    if ~(params[:V_list]===nothing) && length(params[:V_list])> 0
+        s_V = sort(params[:V_list])
+        V_array = [s_V[s_V .< -2.0], s_V[-2.0 .<= s_V .< 0.0 ], s_V[s_V .>= 0.0]]
+    elseif params[:logspace]
         V_array = log_range(params[:V_start],params[:V_end],params[:V_num]) 
     else
         V_array = lin_range(params[:V_start],params[:V_end],params[:V_num]) 
@@ -498,13 +501,13 @@ end
 function compute_particle_EE_n2(psi::MPS,N::Int64)
     lnN = log(binomial(N,2))
 
-    # compute one body density matrix 
-    obdm_ijkl = correlation_matrix_n2(psi,N)
-    obdm = reshape_obdm(obdm_ijkl,N)
+    # compute two body density matrix 
+    tbdm_ijkl = correlation_matrix_n2(psi,N)
+    tbdm = reshape_tbdm(tbdm_ijkl,N)
 
     # get obdm spectrum 
 
-    λs = abs.(eigvals!(obdm))  
+    λs = abs.(eigvals!(tbdm))  
     λs /= sum(λs) #(N*(N-1))
 
     # get Renyi entanglement entropies
@@ -526,7 +529,7 @@ If verbose is true, print a ProgressBar for the outermost loop.
 """
 function correlation_matrix_n2(psi::MPS,N::Int64;verbose=false)
     L = 2*N
-    obdm_ijkl = zeros(ComplexF64,L,L,L,L)
+    tbdm_ijkl = zeros(ComplexF64,L,L,L,L)
     # get sites from MPS
     s = siteinds(psi) 
     # print progressbar if verbose
@@ -552,7 +555,7 @@ function correlation_matrix_n2(psi::MPS,N::Int64;verbose=false)
                     # already covered
                     # (this is the dirty, easy solution, maybe we can 
                     # come up with a more clever design of the loops)
-                    if abs(obdm_ijkl[i,j,k,l]) != 0.0
+                    if abs(tbdm_ijkl[i,j,k,l]) != 0.0
                         continue
                     end
                     # operator as AutoMPO, which is important such that
@@ -599,34 +602,34 @@ function correlation_matrix_n2(psi::MPS,N::Int64;verbose=false)
                         element_ = phase*element
                         # use C(i,j,l,k)=-C(j,i,l,k)=-C(i,j,k,l)=C(j,i,k,l)
                         # and C(i,j,l,k) = C(l,k,i,j)
-                        obdm_ijkl[i_,j_,k_,l_] = element_
-                        obdm_ijkl[j_,i_,k_,l_] = -1.0*element_
-                        obdm_ijkl[i_,j_,l_,k_] = -1.0*element_
-                        obdm_ijkl[j_,i_,l_,k_] = element_
-                        obdm_ijkl[k_,l_,i_,j_] = element_
-                        obdm_ijkl[l_,k_,i_,j_] = -1.0*element_
-                        obdm_ijkl[k_,l_,j_,i_] = -1.0*element_
-                        obdm_ijkl[l_,k_,j_,i_] = element_
+                        tbdm_ijkl[i_,j_,k_,l_] = element_
+                        tbdm_ijkl[j_,i_,k_,l_] = -1.0*element_
+                        tbdm_ijkl[i_,j_,l_,k_] = -1.0*element_
+                        tbdm_ijkl[j_,i_,l_,k_] = element_
+                        tbdm_ijkl[k_,l_,i_,j_] = element_
+                        tbdm_ijkl[l_,k_,i_,j_] = -1.0*element_
+                        tbdm_ijkl[k_,l_,j_,i_] = -1.0*element_
+                        tbdm_ijkl[l_,k_,j_,i_] = element_
                         
                     end
                 end
             end
         end
     end 
-    return obdm_ijkl
+    return tbdm_ijkl
 end
 
 """
 Function to reshape the L x L x L x L array C_i,j,l,k = <psi| c_i^d c_j^d c_l c_k |psi>
-to the obdm matrix of shape L^2 x L^2. Here no normalization is performed jet. The
+to the tbdm matrix of shape L^2 x L^2. Here no normalization is performed yet. The
 normalization factor N*(N-1) has to be applied elsewhere.  
 The basis has the form |i,k> were 1<= i<=L is the position of the first particle on the 
 lattice and k the position of the second particle.
 """
-function reshape_obdm(obdm_ijkl::Array{ComplexF64},N::Int64)
+function reshape_tbdm(tbdm_ijkl::Array{ComplexF64},N::Int64)
     L = 2*N
     basis = Vector{Vector{Int64}}(undef,L*L-L)
-    obdm = zeros(ComplexF64,L*L,L*L)
+    tbdm = zeros(ComplexF64,L*L,L*L)
     # Pauli exclusion principle prevents |i,i>
     i = 1
     for j = 1:L
@@ -640,10 +643,10 @@ function reshape_obdm(obdm_ijkl::Array{ComplexF64},N::Int64)
     end
     for (i1,bs1) in enumerate(basis)
         for (i2,bs2) in enumerate(basis)
-            obdm[i1,i2] = obdm_ijkl[bs1[1],bs1[2],bs2[1],bs2[2]]
+            tbdm[i1,i2] = tbdm_ijkl[bs1[1],bs1[2],bs2[1],bs2[2]]
         end
     end
-    #display(obdm)
-    return obdm
+    #display(tbdm)
+    return tbdm
 
 end

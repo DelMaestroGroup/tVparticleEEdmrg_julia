@@ -381,7 +381,34 @@ function create_trotter_gates_gpu(sites::Any,dt::Float64,L::Int64,N::Int64,t::Fl
     return gates
 end 
 
-function my_apply_trotter1d(gates::AbstractVector, psi::MPS, L::Int64; cutoff=1e-12) 
+"""
+    By chosing a cutoff 2e-12 (that is larger than 1e-12), internally factorize_eigen
+    will be used by ITensors instead of factorization_svd. We found that factorize_svd
+    regularly throws InexactErrors as the called underlying CUDA operation 'gesvdj!' uses 32-bit
+    indexing and some index exeeds the typemax(Int32) range. We found so far that this is
+    not the case (or not as early) when using factorize_eigen and the corresponding
+    CUDA function 'heevd!'. As of writing this comment, the corresponding functions 
+    are in '@CUDA/lib/cusolver/dense.jl' and called from  
+    @ITensors/src/mps/abstractmps.jl:1772; product(o::ITensors.ITensor, ψ::MPS, ns::Vector{Int64}; move_sites_back::Bool, apply_dag::Bool, kwargs::Base.Pairs{Symbol, Float64, Tuple{Symbol}, NamedTuple{(:cutoff,), Tuple{Float64}}})
+    -->
+    ... movesites->_movesites->movesite ...
+    -->
+    @ITensors/src/decomp.jl:499; factorize(A::ITensors.ITensor, Linds::Vector{ITensors.Index{Int64}}; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol, Symbol}, NamedTuple{(:cutoff, :tags, :ortho), Tuple{Float64, String, String}}})
+    -->
+    @ITensors/src/decomp.jl:378; factorize_svd(A::ITensors.ITensor, Linds::Vector{ITensors.Index{Int64}}; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol, Symbol}, NamedTuple{(:cutoff, :tags, :ortho), Tuple{Float64, String, String}}})
+    or
+    @ITensors/src/decomp.jl:421; factorize_eigen(A::ITensors.ITensor, Linds::Vector{ITensors.Index{Int64}}; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol, Symbol}, NamedTuple{(:cutoff, :tags, :ortho), Tuple{Float64, String, String}}})    
+
+    We currently do not know the exact reason for why eigen works and svd fails. There 
+    are other operations called before the CUDA code in factorize_eigen compared to 
+    factorize_svd which could potentially avoid the indexing problem. From just looking
+    at the saved states before the error in factorize_svd occurs it is also not apparent
+    where the index larger 2^32 originates from (but maybe it is a linear index into
+    a large 3d array, an offset row or column index, or even a 'bug' in ITensors.jl
+    that only becomes visible for Int32 indices). 
+    The error and a stacktrace are at the end of this file.
+"""
+function my_apply_trotter1d(gates::AbstractVector, psi::MPS, L::Int64; cutoff=2e-12) 
     
     for gate in gates
        psi = apply(gate,psi;cutoff=cutoff)
@@ -391,3 +418,82 @@ function my_apply_trotter1d(gates::AbstractVector, psi::MPS, L::Int64; cutoff=1e
     return psi 
 
 end
+
+
+"""
+ERROR: LoadError: InexactError: trunc(Int32, 2147801088)
+Stacktrace:
+  [1] throw_inexacterror(f::Symbol, #unused#::Type{Int32}, val::Int64)
+    @ Core ./boot.jl:612
+  [2] checked_trunc_sint
+    @ ./boot.jl:634 [inlined]
+  [3] toInt32
+    @ ./boot.jl:671 [inlined]
+  [4] Int32
+    @ ./boot.jl:761 [inlined]
+  [5] convert
+    @ ./number.jl:7 [inlined]
+  [6] cconvert
+    @ ./essentials.jl:417 [inlined]
+  [7] macro expansion
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/libcusolver.jl:3212 [inlined]
+  [8] macro expansion
+    @ ~/.julia/packages/CUDA/KnJGx/src/pool.jl:173 [inlined]
+  [9] macro expansion
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/error.jl:57 [inlined]
+ [10] cusolverDnZgesvdj(handle::Ptr{Nothing}, jobz::Char, econ::Int64, m::Int64, n::Int64, A::CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, lda::Int64, S::CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}, U::CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, ldu::Int64, V::CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, ldv::Int64, work::CUDA.CuArray{ComplexF64, 1, CUDA.Mem.DeviceBuffer}, lwork::Int64, info::CUDA.CuArray{Int32, 1, CUDA.Mem.DeviceBuffer}, params::Ptr{Nothing})
+    @ CUDA.CUSOLVER ~/.julia/packages/CUDA/KnJGx/lib/utils/call.jl:26
+ [11] #2100
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/dense.jl:484 [inlined]
+ [12] with_workspace(f::CUDA.CUSOLVER.var"#2100#2103"{Char, Int64, CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, CUDA.CuArray{Int32, 1, CUDA.Mem.DeviceBuffer}, Base.RefValue{Ptr{Nothing}}, Int64, CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}, Int64, CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, Int64, Int64, Int64}, eltyp::Type{ComplexF64}, size::CUDA.CUSOLVER.var"#bufferSize#2102"{Char, Int64, CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, Base.RefValue{Ptr{Nothing}}, Int64, CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, CUDA.CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}, Int64, CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}, Int64, Int64, Int64}, fallback::Nothing; keep::Bool)
+    @ CUDA.APIUtils ~/.julia/packages/CUDA/KnJGx/lib/utils/call.jl:77
+ [13] with_workspace (repeats 2 times)
+    @ ~/.julia/packages/CUDA/KnJGx/lib/utils/call.jl:58 [inlined]
+ [14] gesvdj!(jobz::Char, econ::Int64, A::CUDA.CuArray{ComplexF64, 2, CUDA.Mem.DeviceBuffer}; tol::Float64, max_sweeps::Int64)
+    @ CUDA.CUSOLVER ~/.julia/packages/CUDA/KnJGx/lib/cusolver/dense.jl:483
+ [15] gesvdj!
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/dense.jl:449 [inlined]
+ [16] _svd!
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/linalg.jl:114 [inlined]
+ [17] #svd!#2223
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/linalg.jl:102 [inlined]
+ [18] svd!
+    @ ~/.julia/packages/CUDA/KnJGx/lib/cusolver/linalg.jl:102 [inlined]
+ [19] svd(T::NDTensors.DenseTensor{ComplexF64, 2, Tuple{ITensors.Index{Int64}, ITensors.Index{Int64}}, NDTensors.Dense{ComplexF64, CUDA.CuArray{ComplexF64, 1, CUDA.Mem.DeviceBuffer}}}; kwargs::Base.Pairs{Symbol, Any, NTuple{4, Symbol}, NamedTuple{(:ortho, :cutoff, :tags, :alg), Tuple{String, Float64, String, String}}})
+    @ DMRGEntanglementCalculationGPU ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/src/dmrg_entanglement_quench_calculation_functions_gpu.jl:24
+ [20] svd(A::ITensors.ITensor, Linds::Vector{ITensors.Index{Int64}}; kwargs::Base.Pairs{Symbol, Any, NTuple{4, Symbol}, NamedTuple{(:ortho, :cutoff, :tags, :alg), Tuple{String, Float64, String, String}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/decomp.jl:109
+ [21] factorize_svd(A::ITensors.ITensor, Linds::Vector{ITensors.Index{Int64}}; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol, Symbol}, NamedTuple{(:ortho, :cutoff, :tags), Tuple{String, Float64, String}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/decomp.jl:378
+ [22] factorize(A::ITensors.ITensor, Linds::Vector{ITensors.Index{Int64}}; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol, Symbol}, NamedTuple{(:ortho, :cutoff, :tags), Tuple{String, Float64, String}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/decomp.jl:498
+ [23] MPS(A::ITensors.ITensor, sites::Vector{Vector{ITensors.Index{Int64}}}; leftinds::ITensors.Index{Int64}, orthocenter::Int64, kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol}, NamedTuple{(:ortho, :cutoff), Tuple{String, Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1595
+ [24] setindex!(ψ::MPS, A::ITensors.ITensor, r::UnitRange{Int64}; orthocenter::Int64, perm::Vector{Int64}, kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol}, NamedTuple{(:ortho, :cutoff), Tuple{String, Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1537
+ [25] setindex!(::MPS, ::ITensors.ITensor, ::UnitRange{Int64}, ::Pair{Symbol, Any}, ::Vararg{Pair{Symbol, Any}}; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol}, NamedTuple{(:orthocenter, :perm), Tuple{Int64, Vector{Int64}}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1548
+ [26] swapbondsites(ψ::MPS, b::Int64; kwargs::Base.Pairs{Symbol, Any, Tuple{Symbol, Symbol}, NamedTuple{(:ortho, :cutoff), Tuple{String, Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1630
+ [27] movesite(ψ::MPS, n1n2::Pair{Int64, Int64}; orthocenter::Int64, kwargs::Base.Pairs{Symbol, Float64, Tuple{Symbol}, NamedTuple{(:cutoff,), Tuple{Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1656
+ [28] _movesites(ψ::MPS, ns::Vector{Int64}, ns'::Vector{Int64}; kwargs::Base.Pairs{Symbol, Float64, Tuple{Symbol}, NamedTuple{(:cutoff,), Tuple{Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1682
+ [29] movesites(ψ::MPS, nsns'::Vector{Pair{Int64, Int64}}; kwargs::Base.Pairs{Symbol, Float64, Tuple{Symbol}, NamedTuple{(:cutoff,), Tuple{Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1702
+ [30] product(o::ITensors.ITensor, ψ::MPS, ns::Vector{Int64}; move_sites_back::Bool, apply_dag::Bool, kwargs::Base.Pairs{Symbol, Float64, Tuple{Symbol}, NamedTuple{(:cutoff,), Tuple{Float64}}})
+    @ ITensors ~/.julia/packages/ITensors/ZMKMP/src/mps/abstractmps.jl:1775
+ [31] my_apply_trotter1d(gates::Vector{ITensors.ITensor}, psi::MPS, L::Int64; cutoff::Float64)
+    @ DMRGEntanglementCalculationGPU ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/src/dmrg_entanglement_quench_calculation_functions_gpu.jl:376
+ [32] my_apply_trotter1d(gates::Vector{ITensors.ITensor}, psi::MPS, L::Int64)
+    @ DMRGEntanglementCalculationGPU ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/src/dmrg_entanglement_quench_calculation_functions_gpu.jl:375
+ [33] compute_entanglement_quench_gpu(L::Int64, N::Int64, t::Float64, V::Float64, Vp::Float64, boundary::BdryCond, times::Vector{Float64}, dt::Float64, cSteps::Int64, sites::Vector{ITensors.Index{Int64}}, psi::MPS, psi_bot_vec::Vector{MPS}, psi_inf::MPS, Asize::Int64, ℓsize::Int64, spatial::Bool, output_fh::FileOutputHandler, snapshot_sh::SnapshotHandler; debug::Bool, trotter::Bool, first_order_trotter::Bool, tdvp::Bool, save_obdm::Bool)
+    @ DMRGEntanglementCalculationGPU ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/src/dmrg_entanglement_quench_calculation_functions_gpu.jl:294
+ [34] tV_dmrg_ee_calclation_quench_gpu(params::Dict{Symbol, Any}, output_fh::FileOutputHandler, snapshot_sh::SnapshotHandler)
+    @ DMRGEntanglementCalculationGPU ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/src/dmrg_entanglement_quench_calculation_functions_gpu.jl:242
+ [35] main()
+    @ Main ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/tVparticleEEdmrg_quench_gpu.jl:384
+ [36] top-level scope
+    @ ~/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/tVparticleEEdmrg_quench_gpu.jl:395
+in expression starting at /nfs/home/mthamm/code/github/tVparticleEEdmrg_julia/tVparticleEEdmrg/tVparticleEEdmrg_quench_gpu.jl:394 
+"""
