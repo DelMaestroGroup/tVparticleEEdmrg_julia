@@ -402,7 +402,7 @@ end
     We currently do not know the exact reason for why eigen works and svd fails. There 
     are other operations called before the CUDA code in factorize_eigen compared to 
     factorize_svd which could potentially avoid the indexing problem. From just looking
-    at the saved states before the error in factorize_svd occurs it is also not apparent
+    at the saved states before the error in factorize_svd occurs, it is also not apparent
     where the index larger 2^32 originates from (but maybe it is a linear index into
     a large 3d array, an offset row or column index, or even a 'bug' in ITensors.jl
     that only becomes visible for Int32 indices). 

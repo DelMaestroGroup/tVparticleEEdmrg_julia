@@ -4,6 +4,7 @@ using ITensors
 using Random
 using LinearAlgebra
 using ProgressBars 
+using Combinatorics
 
 function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any},output_fh::FileOutputHandler)
   ### Unpacking variables ###
@@ -104,6 +105,11 @@ function compute_dmrg_entanglement_equilibrium(
                 @warn "Skip obdm saving, currently only supported for n=1."
             end
             particle_EE = compute_particle_EE_n2(copy(psi),N)
+        else
+            if save_obdm
+                @warn "Skip obdm saving, currently only supported for n=1."
+            end
+            particle_EE = compute_particle_EE_n(copy(psi),N,Asize)
         end
     end
 
@@ -519,6 +525,28 @@ function compute_particle_EE_n2(psi::MPS,N::Int64)
     return particle_EE
     
 end
+
+function compute_particle_EE_n(psi::MPS,N::Int64,Asize::Int64)
+    lnN = log(binomial(N,Asize))
+
+    # compute two body density matrix 
+    nbdm_ij = correlation_matrix_n(psi,N,Asize)
+    nbdm = reshape_nbdm(nbdm_ij,N,Asize)
+
+    # get obdm spectrum 
+
+    λs = abs.(eigvals!(nbdm))  
+    λs /= sum(λs) 
+
+    # get Renyi entanglement entropies
+    particle_EE = Vector{Float64}(undef,11)
+    for α = 1:11
+        particle_EE[α] = compute_Renyi(α,λs,lnN)
+    end 
+
+    return particle_EE
+    
+end
   
 
 """
@@ -648,5 +676,132 @@ function reshape_tbdm(tbdm_ijkl::Array{ComplexF64},N::Int64)
     end
     #display(tbdm)
     return tbdm
+
+end
+
+
+"""
+Function to compute the L x ... x L x L x ... x L (for L=2N sites) correlation array
+C_i1,...in,,j1,...,jn = <psi| c_i1^d ... c_in^d c_jn ... c_j1 |psi> for the MPS state psi.
+
+If verbose is true, print a ProgressBar for the outermost loop.
+
+This is not a very efficent implementation but can be used for all n. 
+"""
+function correlation_matrix_n(psi::MPS,N::Int64,Asize::Int64;verbose=true)
+    L = 2*N
+    nbdm_ij = zeros(ComplexF64,repeat([L],2*Asize)...)
+    # get sites from MPS
+    s = siteinds(psi) 
+    # print progressbar if verbose
+    # include all "loops" over full ranges 1:L which allows to write it 
+    # in general for all Asize values but does not make use of the symmetries
+    # to restrict loop ranges
+    if verbose
+        iIter = ProgressBar(CartesianIndices(Tuple(repeat([1:L],2*Asize))))
+    else
+        iIter = CartesianIndices(Tuple(repeat([1:L],2*Asize)))
+    end 
+    for indices in iIter
+        i1_in_j1_jn = collect(Tuple(indices))
+        # check if value was already assigned meaning,
+        # this i1..in, j1..jn is in a translational cycle that is
+        # already covered
+        # (this is the non-elegant, easy solution, maybe we can 
+        # come up with a more clever design of the loops)
+        if abs(nbdm_ij[i1_in_j1_jn...]) != 0.0
+            continue
+        end
+        # check Pauli principle (indices can only appear once in the C 
+        # and only once on the Cdag operators)
+        if length(unique(i1_in_j1_jn[1:Asize])) < length(i1_in_j1_jn[1:Asize])
+            continue
+        end
+        if length(unique(i1_in_j1_jn[Asize+1:end])) < length(i1_in_j1_jn[Asize+1:end])
+            continue
+        end
+        # construct the operator tuples for the AutoMPO below
+        # the form is ("operator name", index, "next operator name", next_index, ...)
+        cdags = Vector{Any}(repeat(["Cdag"],2*Asize))
+        cs = Vector{Any}(repeat(["C"],2*Asize))
+        for ind_c = 1:Asize 
+            cdags[2*ind_c] = i1_in_j1_jn[ind_c] 
+            cs[2*ind_c] = reverse(i1_in_j1_jn)[ind_c]
+        end            
+        opr = Tuple(vcat(cdags,cs)) 
+        # operator as AutoMPO, which is important such that
+        # ITensors uses all fermion relations and also
+        # sets orthogonality center, moves indices, etc.
+        # It does not easily work to just apply these
+        # operators one after the other to psi !
+        operator = AutoMPO()
+        operator += opr
+        # convert to real MPO to use in inner
+        operator = MPO(operator,s)
+        # compute matrix element
+        element = inner(psi,operator,psi)
+        
+        # phase is due to boundary conditions when translation
+        # moves operator over the edge
+        phase = +1.0
+        # just include all translations not caring about 
+        # potentialy different cycle lengths ?
+        for iT = 0:L-1
+            if  (N % 2)==0
+                for ind_c in i1_in_j1_jn
+                    if ind_c + iT == L+1
+                        phase *= -1.0
+                    end 
+                end
+            end
+            # add the phase due to translation and bc
+            element_ = phase*element
+            # effects of adding translations T 
+            # <psi| T^d c_i1^d ... c_in^d c_jn ... c_j1 T |psi>
+            # iT times
+            inds_ = (i1_in_j1_jn .+ iT .- 1) .% L .+ 1 
+            # setting up all permutations of the C and Cdag operators
+            # to make use of commutation relations below
+            # therefore also need the parity of the permutations
+            # which define the sign 
+            perms_cdag = permutations(inds_[1:Asize]) 
+            parity_cdag = (-2.0 .*parity.(sortperm.(perms_cdag)) .+ 1.0) .* (-2.0 .*parity(sortperm(inds_[1:Asize])) .+ 1.0)
+            perms_c = permutations(inds_[Asize+1:end])
+            parity_c = (-2.0 .*parity.(sortperm.(perms_c)).+ 1.0) .* (-2.0 .*parity(sortperm(reverse(inds_[Asize+1:end]))) .+ 1.0)
+
+            for (prefactor_,inds_perm_) in zip(Iterators.product(parity_cdag,parity_c),Iterators.product(perms_cdag,perms_c)) 
+                inds_perm = vcat(inds_perm_...)
+                prefactor = prod(prefactor_)
+                nbdm_ij[inds_perm...] = prefactor * element_
+                # use that the resulting expectation value is real
+                # i.e. <c^d_i1...c^d_in c_j1...c_jn> = <c^d_j1...c^d_jn c_i1...c_in>
+                inds_perm_T = vcat(reverse(inds_perm_)...)
+                nbdm_ij[inds_perm_T...] = prefactor * element_
+            end  
+
+        end    
+        
+    end 
+    return nbdm_ij
+end
+
+"""
+Function to reshape the L x ... x L x L x ... x L array C_i1...in,j1...jn = <psi| c_i1^d ... c_in^d c_jn ... c_j1 |psi>
+to the tbdm matrix of shape L^n x L^n. Here no normalization is performed yet.  
+The basis has the form |i1,...,in> were 1<= i<=L is the position of the i-th particle on the 
+lattice.
+"""
+function reshape_nbdm(nbdm_ij::Array{ComplexF64},N::Int64,Asize::Int64)
+    L = 2*N 
+    basis = permutations(1:L,Asize)
+    nbdm = zeros(ComplexF64,length(basis),length(basis))
+
+    for (i1,bs1) in enumerate(basis)
+        for (i2,bs2) in enumerate(basis)
+            nbdm[i1,i2] = nbdm_ij[bs1...,bs2...]
+        end
+    end
+    #display(nbdm)
+    return nbdm
 
 end
