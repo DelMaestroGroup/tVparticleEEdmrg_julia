@@ -15,6 +15,7 @@ using Random
 #Pkg.add("ArgParse")
 #Pkg.add("ProgressBars")
 #Pkg.add("BenchmarkTools")
+#Pkg.add("Combinatorics")
 
 
 # ------------------------------------------------------------------------------
