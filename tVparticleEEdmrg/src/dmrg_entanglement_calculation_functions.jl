@@ -5,6 +5,7 @@ using Random
 using LinearAlgebra
 using ProgressBars
 using Combinatorics
+using FermionBasis
 
 function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any}, output_fh::FileOutputHandler)
     ### Unpacking variables ###
@@ -100,15 +101,16 @@ function compute_dmrg_entanglement_equilibrium(
     else
         if Asize == 1
             particle_EE = compute_particle_EE(copy(psi), N)
-        elseif Asize == 2
-            if save_obdm
-                @warn "Skip obdm saving, currently only supported for n=1."
-            end
-            particle_EE = compute_particle_EE_n2(copy(psi), N)
+        # elseif Asize == 2
+        #     if save_obdm
+        #         @warn "Skip obdm saving, currently only supported for n=1."
+        #     end
+        #     #particle_EE = compute_particle_EE_n2(copy(psi), N)
+        #     particle_EE = compute_particle_EE_n(copy(psi), N, Asize)
         else
             if save_obdm
                 @warn "Skip obdm saving, currently only supported for n=1."
-            end
+            end 
             particle_EE = compute_particle_EE_n(copy(psi), N, Asize)
         end
     end
@@ -532,8 +534,9 @@ end
 function compute_particle_EE_n(psi::MPS, N::Int64, Asize::Int64)
     lnN = log(binomial(N, Asize))
 
-    nbdm_ij = correlation_matrix_n(psi, N, Asize)
-    nbdm = reshape_nbdm(nbdm_ij, N, Asize)
+    # nbdm_ij = correlation_matrix_n(psi, N, Asize)
+    # nbdm = reshape_nbdm(nbdm_ij, N, Asize)
+    nbdm = correlation_matrix_n_reduced(psi, N, Asize)
 
     λs = abs.(eigvals!(nbdm))
     λs /= sum(λs)
@@ -877,4 +880,127 @@ function reshape_nbdm(nbdm_ij::Array{Float64}, N::Int64, Asize::Int64)
 
     return nbdm
 
+end
+
+
+"""
+Function to compute the binomial(L,n) x  binomial(L,n) (for L=2N sites) correlation matrix
+C_bi,bj = <psi| c_i1^d ... c_in^d c_jn ... c_j1 |psi> for the MPS state psi.
+
+Construct the integer fermion basis bi first and translate to the particle
+position basis i1,i2,i3,... in between only considering i1<i2<i3<i4
+"""
+function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=false)
+    L = 2 * N
+    inv_parity_of_Asize = 1 + (-1) * (Asize % 2)
+
+    # integer occupation number basis for 4 fermions on L sites
+    int_basis, nBasis = get_int_fermion_basis(Asize,L)
+
+    nbdm_ij = zeros(Float64, nBasis,nBasis)
+    # get sites from MPS
+    s = siteinds(psi)
+    
+    # loop over the integer basis entries bi, bj
+    if verbose
+        iter_int_basis = ProgressBar(int_basis)
+    else
+        iter_int_basis = int_basis
+    end
+    for bi in iter_int_basis
+        for bj in int_basis
+            # check if value was already assigned 
+            i = get_position_int_basis(bi,int_basis)
+            j = get_position_int_basis(bj,int_basis)
+            if nbdm_ij[i,j] != 0.0
+                continue
+            end
+            # get indices in other basis
+            i1_in_j1_jn = [convert_basis_vector(bi); convert_basis_vector(bj)]
+            # particle hole symmetry 
+            if (sum(i1_in_j1_jn) % 2) == inv_parity_of_Asize
+                if length(unique(i1_in_j1_jn)) == length(i1_in_j1_jn)
+                    continue
+                end
+            end
+            # construct the operator tuples for the AutoMPO below
+            # the form is ("operator name", index, "next operator name", next_index, ...)
+            cdags = Vector{Any}(repeat(["Cdag"], 2 * Asize))
+            cs = Vector{Any}(repeat(["C"], 2 * Asize))
+            for ind_c = 1:Asize
+                cdags[2*ind_c] = i1_in_j1_jn[ind_c]
+                cs[2*ind_c] = reverse(i1_in_j1_jn)[ind_c]
+            end
+            opr = Tuple(vcat(cdags, cs))
+            # operator as AutoMPO, which is important such that
+            # ITensors uses all fermion relations and also
+            # sets orthogonality center, moves indices, etc.
+            # It does not easily work to just apply these
+            # operators one after the other to psi !
+            operator = AutoMPO()
+            operator += opr
+            # convert to real MPO to use in inner
+            operator = MPO(operator, s)
+            # compute matrix element
+            element = inner(psi, operator, psi)
+
+            # phase is due to boundary conditions when translation
+            # moves operator over the edge
+            phase = +1.0
+            # just include all translations not caring about 
+            # potentialy different cycle lengths ?
+            for iT = 0:L-1
+                if (N % 2) == 0
+                    for ind_c in i1_in_j1_jn
+                        if ind_c + iT == L + 1
+                            phase *= -1.0
+                        end
+                    end
+                end
+                # add the phase due to translation and bc
+                element_ = phase * element
+                # effects of adding translations T 
+                # <psi| T^d c_i1^d ... c_in^d c_jn ... c_j1 T |psi>
+                # iT times
+                inds_ = (i1_in_j1_jn .+ iT .- 1) .% L .+ 1
+
+                # loop for reflection symmetry
+                for _ = 1:2
+                    # setting up all permutations of the C and Cdag operators
+                    # to make use of commutation relations below
+                    # therefore also need the parity of the permutations
+                    # which define the sign 
+                    perms_cdag = permutations(inds_[1:Asize])
+                    parity_cdag = (-2.0 .* parity.(sortperm.(perms_cdag)) .+ 1.0) .* (-2.0 .* parity(sortperm(inds_[1:Asize])) .+ 1.0)
+                    perms_c = permutations(inds_[Asize+1:end])
+                    parity_c = (-2.0 .* parity.(sortperm.(perms_c)) .+ 1.0) .* (-2.0 .* parity(sortperm(reverse(inds_[Asize+1:end]))) .+ 1.0)
+
+                    for (prefactor_, inds_perm_) in zip(Iterators.product(parity_cdag, parity_c), Iterators.product(perms_cdag, perms_c))
+                        inds_perm = vcat(inds_perm_...)
+                        prefactor = prod(prefactor_)
+                        b1 = convert_basis_vector(inds_perm[1:Asize])
+                        b2 = convert_basis_vector(inds_perm[Asize+1:end])
+                        if b1 != 0 && b2 != 0
+                            i1 = get_position_int_basis(b1,int_basis)
+                            i2 = get_position_int_basis(b2,int_basis)
+                            nbdm_ij[i1,i2] = prefactor * element_
+                        end
+                        # use that the resulting expectation value is real
+                        # i.e. <c^d_i1...c^d_in c_j1...c_jn> = <c^d_j1...c^d_jn c_i1...c_in>
+                        inds_perm_T = vcat(reverse(inds_perm_)...)
+                        b1 = convert_basis_vector(inds_perm_T[1:Asize])
+                        b2 = convert_basis_vector(inds_perm_T[Asize+1:end])
+                        if b1 != 0 && b2 != 0
+                            i1 = get_position_int_basis(b1,int_basis)
+                            i2 = get_position_int_basis(b2,int_basis)
+                            nbdm_ij[i1,i2] = prefactor * element_
+                        end
+                    end
+                    # reflection symmetry
+                    inds_ .= L .- inds_ .+ 1
+                end
+            end
+        end
+    end
+    return nbdm_ij
 end
