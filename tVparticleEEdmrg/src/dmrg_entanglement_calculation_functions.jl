@@ -378,9 +378,11 @@ function compute_spatial_EE(psi::MPS, lsize::Int64)
     #S = nothing
 
     λs = λs[λs.>1e-12]
+    # sort to avoid numerical instabilities
+    sort!(λs)
 
-    spatial_EE = Vector{Float64}(undef, 11)
-    for α = 1:11
+    spatial_EE = Vector{Float64}(undef, 12)
+    for α = 1:12
         spatial_EE[α] = compute_Renyi(α, λs)
     end
     #_________________________________________
@@ -418,10 +420,12 @@ function compute_particle_EE(psi::MPS, N::Int64)
 
     # get obdm spectrum
     λs = abs.(eigvals!(obdm)) / N
+    # sort to avoid numerical instabilities
+    sort!(λs)
 
     # get Renyi entanglement entropies
-    particle_EE = Vector{Float64}(undef, 11)
-    for α = 1:11
+    particle_EE = Vector{Float64}(undef, 12)
+    for α = 1:12
         particle_EE[α] = compute_Renyi(α, λs, lnN)
     end
 
@@ -440,10 +444,12 @@ function compute_particle_EE_and_obdm(psi::MPS, N::Int64)
 
     # get obdm spectrum
     λs = abs.(eigvals(obdm)) / N
+    # sort to avoid numerical instabilities
+    sort!(λs)
 
     # get Renyi entanglement entropies
-    particle_EE = Vector{Float64}(undef, 11)
-    for α = 1:11
+    particle_EE = Vector{Float64}(undef, 12)
+    for α = 1:12
         particle_EE[α] = compute_Renyi(α, λs, lnN)
     end
 
@@ -472,6 +478,9 @@ function compute_Renyi(α::Int64, λs::Vector{Float64}, offset::Float64=0.0)
     elseif α == 11
         # Entanglement negativity α = 1/2
         return 2 * log(sum(sqrt.(λs))) - offset
+    elseif α == 12
+        # Entanglement infinity
+        return -1.0*log(maximum(λs)) - offset
     end
 
     return 1 / (1 - α) * log(sum(λs .^ α)) - offset
@@ -519,11 +528,12 @@ function compute_particle_EE_n2(psi::MPS, N::Int64)
     tbdm = reshape_tbdm(tbdm_ijkl, N)
 
     λs = abs.(eigvals!(tbdm))
+    sort!(λs)
     λs /= sum(λs) #(N*(N-1))
 
     # get Renyi entanglement entropies
-    particle_EE = Vector{Float64}(undef, 11)
-    for α = 1:11
+    particle_EE = Vector{Float64}(undef, 12)
+    for α = 1:12
         particle_EE[α] = compute_Renyi(α, λs, lnN)
     end
 
@@ -539,11 +549,12 @@ function compute_particle_EE_n(psi::MPS, N::Int64, Asize::Int64)
     nbdm = correlation_matrix_n_reduced(psi, N, Asize)
 
     λs = abs.(eigvals!(nbdm))
+    sort!(λs)
     λs /= sum(λs)
 
     # get Renyi entanglement entropies
-    particle_EE = Vector{Float64}(undef, 11)
-    for α = 1:11
+    particle_EE = Vector{Float64}(undef, 12)
+    for α = 1:12
         particle_EE[α] = compute_Renyi(α, λs, lnN)
     end
 

@@ -277,7 +277,7 @@ function main()
         Asize = c[:ee]
         handler_name = "particleEE"
         # function to convert data to string data = (t, entropies)
-        out_str_pe_01 = data->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
+        out_str_pe_01 = data->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
         # open file
         path_pe_01 = joinpath(out_folder,@sprintf "particle_entanglement_n%02d_%s.dat" c[:ee] calculation_label)
         file_pe_01 = open(path_pe_01,"w")
@@ -286,14 +286,14 @@ function main()
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), n=$(Asize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
-        write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "t" "S₁(n=$(Asize))" "S₂(n=$(Asize))" "S₃(n=$(Asize))" "S₄(n=$(Asize))" "S₅(n=$(Asize))" "S₆(n=$(Asize))" "S₇(n=$(Asize))" "S₈(n=$(Asize))" "S₉(n=$(Asize))" "S₁₀(n=$(Asize))" "S₀₋₅(n=$(Asize))")
+        write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s%24s\n" "t" "S₁(n=$(Asize))" "S₂(n=$(Asize))" "S₃(n=$(Asize))" "S₄(n=$(Asize))" "S₅(n=$(Asize))" "S₆(n=$(Asize))" "S₇(n=$(Asize))" "S₈(n=$(Asize))" "S₉(n=$(Asize))" "S₁₀(n=$(Asize))" "S₀₋₅(n=$(Asize))" "Sinf(n=$(Asize))")
  
     # 2.2. output of spatial entanglement (se_02)
     ℓsize = Int(c[:L]/2)
     if c[:spatial]   
         handler_name = "spatialEE"
         # function to convert data to string data = (t, entropies)
-        out_str_se_02 = (data)->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
+        out_str_se_02 = (data)->@sprintf "%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E%24.12E\n" data[1] data[2]...
         # open file
         path_se_02 = joinpath(out_folder,@sprintf "spatial_entanglement_l%02d_%s.dat" ℓsize calculation_label)
         file_se_02 = open(path_se_02,"w")
@@ -302,7 +302,7 @@ function main()
         # write initial header
         write_str(output_fh,handler_name, "# M=$(c[:L]), N=$(c[:N]), Vp=$(c[:Vp]), t=$(c[:t]), l=$(ℓsize), Vstart=$(c[:V_start]), Vstop=$(c[:V_end]), Vnum=$(c[:V_num]), $(c[:boundary])\n")
         write_info(output_fh,handler_name,c)
-        write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s\n" "t" "S₁(n=$(ℓsize))" "S₂(n=$(ℓsize))" "S₃(n=$(ℓsize))" "S₄(n=$(ℓsize))" "S₅(n=$(ℓsize))" "S₆(n=$(ℓsize))" "S₇(n=$(ℓsize))" "S₈(n=$(ℓsize))" "S₉(n=$(ℓsize))" "S₁₀(n=$(ℓsize))" "S₀₋₅(n=$(ℓsize))")      
+        write_str(output_fh,handler_name,@sprintf "#%24s#%24s#%24s%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s#%24s%24s\n" "t" "S₁(n=$(ℓsize))" "S₂(n=$(ℓsize))" "S₃(n=$(ℓsize))" "S₄(n=$(ℓsize))" "S₅(n=$(ℓsize))" "S₆(n=$(ℓsize))" "S₇(n=$(ℓsize))" "S₈(n=$(ℓsize))" "S₉(n=$(ℓsize))" "S₁₀(n=$(ℓsize))" "S₀₋₅(n=$(ℓsize))" "Sinf(n=$(ℓsize))")      
     end
 
     # 2.3. output of accessible entanglement (ae_03)
@@ -388,7 +388,7 @@ function main()
 
  # ________4_Output_Finalization___________________ 
     for (h_name,) in output_fh.handler_name_lookup
-        write_str(output_fh,h_name,"\n\n Calculation finished at  $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))")
+        write_str(output_fh,h_name,"#\n#\n#Calculation finished at  $(Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))")
     end
     close(output_fh) 
 
