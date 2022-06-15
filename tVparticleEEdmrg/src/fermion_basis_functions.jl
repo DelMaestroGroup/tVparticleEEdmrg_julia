@@ -7,13 +7,20 @@ number of basis elements 'nBasis'.
 """
 function get_int_fermion_basis(n::Int64,L::Int64)
     L >= 1 || throw(DomainError(L, "At least 1 site is required."))
-    L <= 64 || throw(DomainError(L, "Int64 basis does not support more than 64 sites."))
+    L <= 128 || throw(DomainError(L, "Int64 basis does not support more than 128 sites."))
     n >= 0 || throw(DomainError(n, "At least 0 particles are required.")) 
 
-    # Basis size.
+    # select Int64 or Int128 depending on the number of sites
+    if L <= 64
+        T = Int64
+    else
+        T = Int128
+    end
+
+    # Basis size
     nBasis = binomial(L, n)
-    v =2^n-1
-    vectors = Vector{Int}(undef, nBasis)
+    v =T(2)^n-T(1)
+    vectors = Vector{T}(undef, nBasis)
 
     vectors[1] = v
     for i in 2:nBasis
@@ -35,39 +42,39 @@ function get_int_fermion_basis(n::Int64,L::Int64)
         end
         vectors[i] = v
     end
-
+    
     return vectors, nBasis
 end
 
 """ find first bit=0 from the extreme right bit """
-function findfirstEmpty(v::Int)
+function findfirstEmpty(v::T) where {T<:Integer}
     return trailing_ones(v)+1
 end
 
 """ find first bit=1 from the extreme right bit """
-function findfirstOccupide(v::Int)
+function findfirstOccupide(v::T) where {T<:Integer}
     return trailing_zeros(v)+1
 end
 
 
 """ find first bit=0 after the first bit=1 from the extreme right bit"""
-function findFrsEmpAfterFrsOcc(v::Int)
+function findFrsEmpAfterFrsOcc(v::T) where {T<:Integer}
     return  findfirstOccupide(v)+trailing_ones(v>>>(findfirstOccupide(v)))+1 
 end
 
 """ set a bit to 1  """
-function OccupySite(v::Int,bit::Int64)
-    return ((1 << (bit-1)) | v)::Int64
+function OccupySite(v::T,bit::T2) where {T<:Integer,T2<:Integer}
+    return ((T(1) << (bit-1)) | v)::T
 end
 
 """ set a bit to 0 """
-function EmptySite(v::Int,bit::Int64)
-    return convert(Int64, (~(1 << (bit-1))) & Int64(v))
+function EmptySite(v::T,bit::T2) where {T<:Integer,T2<:Integer}
+    return convert(T, (~(T(1) << (bit-1))) & v)
 end
 
 """ read a bit """
-function CheckSite(v::Int,bit::Int64)
-    return Int64((v >> (bit-1)) & 1)
+function CheckSite(v::T,bit::T2) where {T<:Integer,T2<:Integer}
+    return Int64((v >> (bit-1)) & T(1))
 end
 
 
@@ -75,7 +82,7 @@ end
 Transforms the element bi from the integer basis into the
 particle position basis i1,i2,i3,... such that i1<i2<i3<.... 
 """
-function convert_basis_vector(bi::Int64)
+function convert_basis_vector(bi::T) where {T<:Integer}
     n_ones = count_ones(bi)
     ni = zeros(Int64,n_ones)
 
@@ -101,19 +108,19 @@ zero if the entries in ni are not compatible with the
 fermion basis, e.g. 1,1,2,3, or if ni are not ordered
 in acending order
 """
-function convert_basis_vector(ni::Vector{Int64})
+function convert_basis_vector(T::Type,ni::Vector{Int64})  
     
-    bi = 0
+    bi = zero(T)
     i_last = ni[1]
     for i in ni
         if i_last > i
-            return 0
+            return T(0)
         end
-        bi = bi | (1 << (i-1))
+        bi = bi | (T(1) << (i-1))
         i_last = i
     end
     if count_ones(bi) != length(ni)
-        return 0
+        return T(0)
     end
     return bi
 end
@@ -123,10 +130,10 @@ Determines the position of the integer bi in the
 integer fermion basis. <-- inefficent function!!, can be improved 
 significantly but should be fast enough for n=4, N=16
 """
-function get_position_int_basis(bi::Int64,n::Int64,L::Int64)
+function get_position_int_basis(bi::T,n::Int64,L::Int64) where {T<:Integer}
     # Basis size.
     nBasis = binomial(L, n)
-    v =2^n-1 
+    v =T(2)^n-T(1) 
 
     for i in 2:nBasis
         if v == bi
@@ -156,7 +163,7 @@ function get_position_int_basis(bi::Int64,n::Int64,L::Int64)
     error(@sprintf "Could not locate bi=%d in integer fermion basis of n=%d particles on L=%d sites." bi n L)
 end
 
-function get_position_int_basis(bi::Int64,int_basis::Vector{Int64})
+function get_position_int_basis(bi::T,int_basis::Vector{T}) where {T<:Integer}
     return searchsortedfirst(int_basis,bi)
 end
 
@@ -166,17 +173,17 @@ particle position basis in the corresponding integer
 fermion basis. It returns zero if the entries in ni 
 are not compatible with the fermion basis, e.g. 1,1,2,3 
 """
-function get_position_int_basis(ni::Vector{Int64},n::Int64,L::Int64)
-    bi = translate_basis_vector(ni)
-    if bi == 0
+function get_position_int_basis(T::Type,ni::Vector{Int64},n::Int64,L::Int64)
+    bi = translate_basis_vector(T,ni)
+    if bi == T(0)
         return 0
     end
     return get_position_int_basis(bi,n,L)
 end
 
-function get_position_int_basis(ni::Vector{Int64},int_basis::Vector{Int64})
-    bi = translate_basis_vector(ni)
-    if bi == 0
+function get_position_int_basis(ni::Vector{Int64},int_basis::Vector{T}) where {T<:Integer}
+    bi = translate_basis_vector(T,ni)
+    if bi == T(0)
         return 0
     end
     return get_position_int_basis(bi,int_basis)

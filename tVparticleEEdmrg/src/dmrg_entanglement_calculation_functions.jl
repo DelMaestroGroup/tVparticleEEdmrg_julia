@@ -908,6 +908,9 @@ function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=
     # integer occupation number basis for 4 fermions on L sites
     int_basis, nBasis = get_int_fermion_basis(Asize,L)
 
+    # type of integers to use for basis, depending how many bits are needed 
+    T = eltype(int_basis)
+
     nbdm_ij = zeros(Float64, nBasis,nBasis)
     # get sites from MPS
     s = siteinds(psi)
@@ -989,8 +992,8 @@ function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=
                     for (prefactor_, inds_perm_) in zip(Iterators.product(parity_cdag, parity_c), Iterators.product(perms_cdag, perms_c))
                         inds_perm = vcat(inds_perm_...)
                         prefactor = prod(prefactor_)
-                        b1 = convert_basis_vector(inds_perm[1:Asize])
-                        b2 = convert_basis_vector(inds_perm[Asize+1:end])
+                        b1 = convert_basis_vector(T,inds_perm[1:Asize])
+                        b2 = convert_basis_vector(T,inds_perm[Asize+1:end])
                         if b1 != 0 && b2 != 0
                             i1 = get_position_int_basis(b1,int_basis)
                             i2 = get_position_int_basis(b2,int_basis)
@@ -999,8 +1002,9 @@ function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=
                         # use that the resulting expectation value is real
                         # i.e. <c^d_i1...c^d_in c_j1...c_jn> = <c^d_j1...c^d_jn c_i1...c_in>
                         inds_perm_T = vcat(reverse(inds_perm_)...)
-                        b1 = convert_basis_vector(inds_perm_T[1:Asize])
-                        b2 = convert_basis_vector(inds_perm_T[Asize+1:end])
+                        b1 = convert_basis_vector(T,inds_perm_T[1:Asize])
+                        b2 = convert_basis_vector(T,inds_perm_T[Asize+1:end])
+                        # println(T," ",inds_perm_T," ",typeof(b1)," ",typeof(b2))  
                         if b1 != 0 && b2 != 0
                             i1 = get_position_int_basis(b1,int_basis)
                             i2 = get_position_int_basis(b2,int_basis)
