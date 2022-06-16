@@ -1,6 +1,7 @@
 """
 Module DMRGEntanglementCalculation contains all function to calcuate the entangleent entropy
     and write it to output files.
+    This imports CPU versions of functions. 
 
 Usage: 
      

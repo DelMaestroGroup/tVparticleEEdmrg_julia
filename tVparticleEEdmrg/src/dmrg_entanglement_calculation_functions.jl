@@ -21,7 +21,7 @@ function tV_dmrg_ee_calclation_equilibrium(params::Dict{Symbol,Any}, output_fh::
     Asize = params[:ee]
     ℓsize = div(L, 2)
     # Interaction paramers V, V' 
-    # Split V in regions <0 and >0 and start from values closest to 0 
+    # Split V in regions -2<=V<0, V>=0, and V<-2, approach -2 from the right in V<-2, otherwise start from 0
     if ~(params[:V_list] === nothing) && length(params[:V_list]) > 0
         s_V = sort(params[:V_list])
         V_array = [s_V[s_V.<-2.0], s_V[-2.0 .<= s_V .< 0.0], s_V[s_V.>=0.0]]
@@ -101,16 +101,16 @@ function compute_dmrg_entanglement_equilibrium(
     else
         if Asize == 1
             particle_EE = compute_particle_EE(copy(psi), N)
-        # elseif Asize == 2
-        #     if save_obdm
-        #         @warn "Skip obdm saving, currently only supported for n=1."
-        #     end
-        #     #particle_EE = compute_particle_EE_n2(copy(psi), N)
-        #     particle_EE = compute_particle_EE_n(copy(psi), N, Asize)
+            # elseif Asize == 2
+            #     if save_obdm
+            #         @warn "Skip obdm saving, currently only supported for n=1."
+            #     end
+            #     #particle_EE = compute_particle_EE_n2(copy(psi), N)
+            #     particle_EE = compute_particle_EE_n(copy(psi), N, Asize)
         else
             if save_obdm
-                @warn "Skip obdm saving, currently only supported for n=1."
-            end 
+                @warn "Skip obdm saving, only supported for n=1."
+            end
             particle_EE = compute_particle_EE_n(copy(psi), N, Asize)
         end
     end
@@ -179,6 +179,7 @@ function compute_dmrg_entanglement_equilibrium(
     return particle_EE, zeros(Float64, size(particle_EE)), zeros(Float64, size(accessible_EE))
 end
 
+"""Setup Hamiltonian of J-V model as an MPO"""
 function create_hamiltonian(sites::AbstractVector, L::Int64, N::Int64, t::Float64, V::Float64, Vp::Float64, boundary::BdryCond)
 
     # Input operator terms which define
@@ -246,6 +247,8 @@ function create_initial_state(sites::Vector{Index{Vector{Pair{QN,Int64}}}}, L::I
     return psi0, psi_bot_vec, psi_inf
 end
 
+"""Get a random state with L=2N by adding numRands MPS of shuffled alternating 
+configurations [Emp,Occ,Emp,Occ,Emp,Occ,...]."""
 function get_random_state(sites::Vector{Index{Vector{Pair{QN,Int64}}}}, L::Int64, N::Int64; numRands::Int64=20)
     state = Vector{String}([Bool(i % 2) ? "Emp" : "Occ" for i in 1:L])
     for iState = 0:numRands
@@ -266,6 +269,9 @@ function get_random_product_state(sites::Vector{Index{Vector{Pair{QN,Int64}}}}, 
     return 1 / norm(psi0) * psi0
 end
 
+"""Build helper states psi_inf, psi_bot_vec. psi_inf are eigenstates at +-infinity interaction strength
+(sign based on sign of V). psi_bot_vec are states from q!=0 block to which we enforce orthogonality
+of the ground state during the dmrg calculation."""
 function construct_auxiliary_states(sites::Vector{Index{Vector{Pair{QN,Int64}}}}, L::Int64, N::Int64, V::Float64)
     psi_inf = MPS()
 
@@ -412,6 +418,13 @@ function compute_spatial_EE(psi::MPS, lsize::Int64)
 
 end
 
+"""Computes one particle entanglement entropy particle_EE.
+particle_EE[i] where 
+        i=1 is von Neumann α=1
+        i=2...10 is Renyi α=2...10
+        i=11 is negativity α=0.5
+        i=12 is Renyi in the limit α -> inf 
+"""
 function compute_particle_EE(psi::MPS, N::Int64)
     lnN = log(N)
 
@@ -434,7 +447,12 @@ function compute_particle_EE(psi::MPS, N::Int64)
 end
 
 """Obtain the obdm in addition. Only the middle row of the one body density
-matrix is returned."""
+matrix is returned.
+particle_EE[i] where 
+        i=1 is von Neumann α=1
+        i=2...10 is Renyi α=2...10
+        i=11 is negativity α=0.5
+        i=12 is Renyi in the limit α -> inf """
 function compute_particle_EE_and_obdm(psi::MPS, N::Int64)
     lnN = log(N)
 
@@ -457,6 +475,11 @@ function compute_particle_EE_and_obdm(psi::MPS, N::Int64)
 
 end
 
+"""Compute Renyi indices with power  α, here  
+    α=1 is the von Neumann entropy,
+    α=11 is the negativity=Renyi with power 0.5
+    α=12 is the Renyi for  α->inf.
+"""
 function compute_Renyi(α::Int64, λs::Vector{Float64}, offset::Float64=0.0)
     sumeval = sum(λs)
     if abs(sumeval - 1.0) > 1e-8
@@ -480,7 +503,7 @@ function compute_Renyi(α::Int64, λs::Vector{Float64}, offset::Float64=0.0)
         return 2 * log(sum(sqrt.(λs))) - offset
     elseif α == 12
         # Entanglement infinity
-        return -1.0*log(maximum(λs)) - offset
+        return -1.0 * log(maximum(λs)) - offset
     end
 
     return 1 / (1 - α) * log(sum(λs .^ α)) - offset
@@ -514,7 +537,7 @@ function compute_InvRenyi(α::Int64, λs::Vector{Float64}, offset::Float64=0.0)
 
 end
 
-
+"""Special implementation to compute the n=2 particle entanglement entropy."""
 function compute_particle_EE_n2(psi::MPS, N::Int64)
     lnN = log(binomial(N, 2))
 
@@ -541,6 +564,8 @@ function compute_particle_EE_n2(psi::MPS, N::Int64)
 
 end
 
+"""Compute the n particle entanglement entropy using integer fermion bases and 
+constructing the nescessary elements of the n body density matrix."""
 function compute_particle_EE_n(psi::MPS, N::Int64, Asize::Int64)
     lnN = log(binomial(N, Asize))
 
@@ -564,6 +589,7 @@ end
 
 
 """
+OLD IMPLEMENTATION, see correlation_matrix_n_reduced instead
 Function to compute the L x L x L x L (for L=2N sites) correlation array
 C_i,j,l,k = <psi| c_i^d c_j^d c_l c_k |psi> for the MPS state psi.
 
@@ -687,6 +713,7 @@ end
 
 
 """
+OLD IMPLEMENTATION, see correlation_matrix_n_reduced instead
 Function to reshape the L x L x L x L array C_i,j,l,k = <psi| c_i^d c_j^d c_l c_k |psi>
 to the tbdm matrix of shape L^2 x L^2. Here no normalization is performed yet. The
 normalization factor N*(N-1) has to be applied elsewhere.  
@@ -754,6 +781,7 @@ function filter_indices(inds)
 end
 
 """
+OLD IMPLEMENTATION, see correlation_matrix_n_reduced instead
 Function to compute the L x ... x L x L x ... x L (for L=2N sites) correlation array
 C_i1,...in,,j1,...,jn = <psi| c_i1^d ... c_in^d c_jn ... c_j1 |psi> for the MPS state psi.
 
@@ -873,6 +901,7 @@ function correlation_matrix_n(psi::MPS, N::Int64, Asize::Int64; verbose=true)
 end
 
 """
+OLD IMPLEMENTATION, see correlation_matrix_n_reduced instead
 Function to reshape the L x ... x L x L x ... x L array C_i1...in,j1...jn = <psi| c_i1^d ... c_in^d c_jn ... c_j1 |psi>
 to the tbdm matrix of shape L^n x L^n. Here no normalization is performed yet.  
 The basis has the form |i1,...,in> were 1<= i<=L is the position of the i-th particle on the 
@@ -906,15 +935,15 @@ function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=
     inv_parity_of_Asize = 1 + (-1) * (Asize % 2)
 
     # integer occupation number basis for 4 fermions on L sites
-    int_basis, nBasis = get_int_fermion_basis(Asize,L)
+    int_basis, nBasis = get_int_fermion_basis(Asize, L)
 
     # type of integers to use for basis, depending how many bits are needed 
     T = eltype(int_basis)
 
-    nbdm_ij = zeros(Float64, nBasis,nBasis)
+    nbdm_ij = zeros(Float64, nBasis, nBasis)
     # get sites from MPS
     s = siteinds(psi)
-    
+
     # loop over the integer basis entries bi, bj
     if verbose
         iter_int_basis = ProgressBar(int_basis)
@@ -924,9 +953,9 @@ function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=
     for bi in iter_int_basis
         for bj in int_basis
             # check if value was already assigned 
-            i = get_position_int_basis(bi,int_basis)
-            j = get_position_int_basis(bj,int_basis)
-            if nbdm_ij[i,j] != 0.0
+            i = get_position_int_basis(bi, int_basis)
+            j = get_position_int_basis(bj, int_basis)
+            if nbdm_ij[i, j] != 0.0
                 continue
             end
             # get indices in other basis
@@ -992,23 +1021,23 @@ function correlation_matrix_n_reduced(psi::MPS, N::Int64, Asize::Int64; verbose=
                     for (prefactor_, inds_perm_) in zip(Iterators.product(parity_cdag, parity_c), Iterators.product(perms_cdag, perms_c))
                         inds_perm = vcat(inds_perm_...)
                         prefactor = prod(prefactor_)
-                        b1 = convert_basis_vector(T,inds_perm[1:Asize])
-                        b2 = convert_basis_vector(T,inds_perm[Asize+1:end])
+                        b1 = convert_basis_vector(T, inds_perm[1:Asize])
+                        b2 = convert_basis_vector(T, inds_perm[Asize+1:end])
                         if b1 != 0 && b2 != 0
-                            i1 = get_position_int_basis(b1,int_basis)
-                            i2 = get_position_int_basis(b2,int_basis)
-                            nbdm_ij[i1,i2] = prefactor * element_
+                            i1 = get_position_int_basis(b1, int_basis)
+                            i2 = get_position_int_basis(b2, int_basis)
+                            nbdm_ij[i1, i2] = prefactor * element_
                         end
                         # use that the resulting expectation value is real
                         # i.e. <c^d_i1...c^d_in c_j1...c_jn> = <c^d_j1...c^d_jn c_i1...c_in>
                         inds_perm_T = vcat(reverse(inds_perm_)...)
-                        b1 = convert_basis_vector(T,inds_perm_T[1:Asize])
-                        b2 = convert_basis_vector(T,inds_perm_T[Asize+1:end])
+                        b1 = convert_basis_vector(T, inds_perm_T[1:Asize])
+                        b2 = convert_basis_vector(T, inds_perm_T[Asize+1:end])
                         # println(T," ",inds_perm_T," ",typeof(b1)," ",typeof(b2))  
                         if b1 != 0 && b2 != 0
-                            i1 = get_position_int_basis(b1,int_basis)
-                            i2 = get_position_int_basis(b2,int_basis)
-                            nbdm_ij[i1,i2] = prefactor * element_
+                            i1 = get_position_int_basis(b1, int_basis)
+                            i2 = get_position_int_basis(b2, int_basis)
+                            nbdm_ij[i1, i2] = prefactor * element_
                         end
                     end
                     # reflection symmetry

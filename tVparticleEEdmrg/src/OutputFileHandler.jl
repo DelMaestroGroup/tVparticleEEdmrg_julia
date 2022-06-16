@@ -2,6 +2,7 @@
 Module OutputFileHandler defines the type FileOutputHandler which collects lists of
 IOStream files, functions to convert data to strings to write to these files, 
 and handler names. 
+In addition, implements snapshot file handler to save states based on t.
 
 Usage: 
     using OutputFileHandler

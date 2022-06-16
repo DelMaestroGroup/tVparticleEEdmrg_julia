@@ -1,6 +1,7 @@
 """
-Module DMRGEntanglementCalculation contains all function to calcuate the entangleent entropy
+Module DMRGEntanglementCalculation contains function to calcuate the engangle entropy 
     and write it to output files.
+    This imports GPU versions of functions. This module requires ITensorGPU.
 
 Usage: 
      
